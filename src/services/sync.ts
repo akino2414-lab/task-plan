@@ -61,7 +61,47 @@ class SyncService {
     return this.lastSyncedTime;
   }
 
-  // Pull data from server
+  // Pull data from server master store, or fallback to room sync
+  public async pullMasterOrRoomData(): Promise<SyncData | null> {
+    // 1. Try pulling master persistent data first
+    try {
+      const res = await fetch('/api/storage/master');
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.hasData && json.data) {
+          this.lastSyncedTime = json.updatedAt || Date.now();
+          return json.data as SyncData;
+        }
+      }
+    } catch (e) {
+      console.warn('Master storage pull error:', e);
+    }
+
+    // 2. Fallback to room sync code
+    return this.pullData();
+  }
+
+  // Restore from server rolling backup
+  public async restoreServerBackup(): Promise<SyncData | null> {
+    try {
+      const res = await fetch('/api/storage/restore-backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.data) {
+          this.lastSyncedTime = json.updatedAt || Date.now();
+          return json.data as SyncData;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to restore server backup:', e);
+    }
+    return null;
+  }
+
+  // Pull data from server room
   public async pullData(): Promise<SyncData | null> {
     if (!this.syncCode) return null;
     try {
@@ -85,25 +125,46 @@ class SyncService {
     }
   }
 
-  // Push data to server
+  // Push data to server (both master persistent file and room code)
   public async pushData(data: SyncData): Promise<boolean> {
-    if (!this.syncCode) return false;
+    let success = false;
+    const bodyStr = JSON.stringify({ data });
+
+    // 1. Save to master persistent store on disk
     try {
-      const res = await fetch(`/api/sync/${encodeURIComponent(this.syncCode)}`, {
+      const masterRes = await fetch('/api/storage/master', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data }),
+        body: bodyStr,
       });
-      if (res.ok) {
-        const json = await res.json();
+      if (masterRes.ok) {
+        const json = await masterRes.json();
         this.lastSyncedTime = json.updatedAt || Date.now();
-        return true;
+        success = true;
       }
-      return false;
     } catch (e) {
-      console.warn('Sync push error:', e);
-      return false;
+      console.warn('Master storage push error:', e);
     }
+
+    // 2. Also save to sync room for peer multi-device sync
+    if (this.syncCode) {
+      try {
+        const roomRes = await fetch(`/api/sync/${encodeURIComponent(this.syncCode)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: bodyStr,
+        });
+        if (roomRes.ok) {
+          const json = await roomRes.json();
+          this.lastSyncedTime = json.updatedAt || Date.now();
+          success = true;
+        }
+      } catch (e) {
+        console.warn('Sync room push error:', e);
+      }
+    }
+
+    return success;
   }
 
   // Debounced push to prevent spamming while typing

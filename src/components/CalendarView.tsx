@@ -142,8 +142,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Calendar Navigation & Mode Header */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="flex items-center justify-between sm:justify-start gap-3">
           <div className="flex items-center gap-1">
             <button
               onClick={prevMonth}
@@ -162,7 +162,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
 
           <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <CalendarIcon className="w-5 h-5 text-indigo-500" />
+            <CalendarIcon className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" />
             <span>
               {year}年 {month + 1}月
             </span>
@@ -176,27 +176,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </button>
         </div>
 
-        <div className="text-xs text-slate-500 flex items-center gap-2">
+        <div className="text-xs text-slate-500 flex items-center gap-2 hidden sm:flex">
           <span>💡 日付マスにタスクをドラッグして日付を変更できます</span>
         </div>
       </div>
 
       {/* Calendar Grid Container */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        {/* Days of week header */}
-        <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-center py-2.5 text-xs font-bold text-slate-600 dark:text-slate-400">
-          {daysOfWeek.map((day, idx) => (
-            <div
-              key={day}
-              className={idx === 0 ? 'text-rose-500' : idx === 6 ? 'text-blue-500' : ''}
-            >
-              {day}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden w-full">
+        <div className="w-full overflow-x-auto">
+          <div className="min-w-[340px]">
+            {/* Days of week header */}
+            <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-center py-2 sm:py-2.5 text-xs font-bold text-slate-600 dark:text-slate-400">
+              {daysOfWeek.map((day, idx) => (
+                <div
+                  key={day}
+                  className={idx === 0 ? 'text-rose-500' : idx === 6 ? 'text-blue-500' : ''}
+                >
+                  {day}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Calendar Day Cells */}
-        <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-slate-200 dark:divide-slate-800 border-b border-slate-200 dark:border-slate-800">
+            {/* Calendar Day Cells */}
+            <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-slate-200 dark:divide-slate-800 border-b border-slate-200 dark:border-slate-800">
           {calendarCells.map((cell, idx) => {
             const dayTasks = tasksByDate.get(cell.dateStr) || [];
             const isSelected = selectedDayDate === cell.dateStr;
@@ -291,6 +293,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               </div>
             );
           })}
+        </div>
+          </div>
         </div>
       </div>
 

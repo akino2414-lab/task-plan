@@ -151,21 +151,37 @@ export default function App() {
   const [syncCode, setSyncCode] = useState<string>(() => syncService.getSyncCode());
   const [lastSyncedTime, setLastSyncedTime] = useState<number>(0);
 
-  // App Data states
+  // App Data states (with multi-layer persistence & update survival)
   const [tasks, setTasks] = useState<Task[]>(() => {
     try {
-      const saved = localStorage.getItem('taskflow_tasks');
+      // 1. Primary storage
+      const saved = localStorage.getItem('taskflow_tasks_v2') || localStorage.getItem('taskflow_tasks');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          const hasInited = localStorage.getItem('taskflow_user_data_initialized') === 'true';
+          if (parsed.length > 0 || hasInited) {
+            return parsed;
+          }
+        }
       }
-    } catch {}
+      // 2. Local rolling backup
+      const backup = localStorage.getItem('taskflow_tasks_backup');
+      if (backup) {
+        const parsedBackup = JSON.parse(backup);
+        if (Array.isArray(parsedBackup) && parsedBackup.length > 0) {
+          return parsedBackup;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load local tasks:', e);
+    }
     return INITIAL_TASKS;
   });
 
   const [categories, setCategories] = useState<Category[]>(() => {
     try {
-      const saved = localStorage.getItem('taskflow_categories');
+      const saved = localStorage.getItem('taskflow_categories_v2') || localStorage.getItem('taskflow_categories');
       if (saved) return JSON.parse(saved);
     } catch {}
     return DEFAULT_CATEGORIES;
@@ -199,20 +215,28 @@ export default function App() {
     } catch {}
   }, [isDarkMode]);
 
-  // Persist tasks & categories locally
+  // Persist tasks locally with backup snapshots
   useEffect(() => {
     try {
+      localStorage.setItem('taskflow_tasks_v2', JSON.stringify(tasks));
       localStorage.setItem('taskflow_tasks', JSON.stringify(tasks));
-    } catch {}
+      localStorage.setItem('taskflow_user_data_initialized', 'true');
+      if (tasks.length > 0) {
+        localStorage.setItem('taskflow_tasks_backup', JSON.stringify(tasks));
+      }
+    } catch (e) {
+      console.warn('LocalStorage save error:', e);
+    }
   }, [tasks]);
 
   useEffect(() => {
     try {
+      localStorage.setItem('taskflow_categories_v2', JSON.stringify(categories));
       localStorage.setItem('taskflow_categories', JSON.stringify(categories));
     } catch {}
   }, [categories]);
 
-  // Cloud Sync on Task / Category changes (debounced push)
+  // Server master & Cloud Sync on Task / Category changes (debounced push)
   useEffect(() => {
     const availableTags = Array.from(new Set(tasks.flatMap((t) => t.tags || [])));
     const syncPayload: SyncData = {
@@ -227,14 +251,20 @@ export default function App() {
     });
   }, [tasks, categories]);
 
-  // Pull initial cloud state on mount
+  // Pull initial cloud/master persistent state on mount (protect against app update / storage clears)
   useEffect(() => {
-    syncService.pullData().then((serverData) => {
-      if (serverData && Array.isArray(serverData.tasks) && serverData.tasks.length > 0) {
-        setTasks(serverData.tasks);
-        if (serverData.categories) setCategories(serverData.categories);
-        setSyncStatus('synced');
-        setLastSyncedTime(syncService.getLastSynced());
+    syncService.pullMasterOrRoomData().then((serverData) => {
+      if (serverData && Array.isArray(serverData.tasks)) {
+        const hasLocalInited = localStorage.getItem('taskflow_user_data_initialized') === 'true';
+        // If local was never customized or server has valid data, load server data
+        if (!hasLocalInited || serverData.tasks.length > 0) {
+          setTasks(serverData.tasks);
+          if (serverData.categories && serverData.categories.length > 0) {
+            setCategories(serverData.categories);
+          }
+          setSyncStatus('synced');
+          setLastSyncedTime(syncService.getLastSynced());
+        }
       }
     });
   }, []);
@@ -447,8 +477,8 @@ export default function App() {
     updates: { taskId: string; newDueDate: string; newOrder?: number }[]
   ) => {
     const updateMap = new Map(updates.map((u) => [u.taskId, u]));
-    setTasks(
-      tasks.map((t) => {
+    setTasks((prevTasks) =>
+      prevTasks.map((t) => {
         const u = updateMap.get(t.id);
         if (u) {
           return {
@@ -460,18 +490,24 @@ export default function App() {
         return t;
       })
     );
+    // Switch to calendar view so user immediately sees the day-by-day plan applied!
+    setActiveTab('calendar');
   };
 
   const handleAddAiGeneratedTasks = (
     newTasks: Array<Omit<Task, 'id' | 'createdAt' | 'order'>>
   ) => {
-    const formatted: Task[] = newTasks.map((nt, idx) => ({
-      ...nt,
-      id: 'task_ai_' + Math.random().toString(36).substring(2, 9),
-      order: tasks.length + idx + 1,
-      createdAt: new Date().toISOString(),
-    }));
-    setTasks([...formatted, ...tasks]);
+    setTasks((prevTasks) => {
+      const formatted: Task[] = newTasks.map((nt, idx) => ({
+        ...nt,
+        id: 'task_ai_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '_' + idx,
+        order: prevTasks.length + idx + 1,
+        createdAt: new Date().toISOString(),
+      }));
+      return [...formatted, ...prevTasks];
+    });
+    // Switch to board or calendar so user immediately sees the new roadmap tasks!
+    setActiveTab('board');
   };
 
   // Sound callbacks
@@ -539,8 +575,20 @@ export default function App() {
     }
   };
 
+  const handleRestoreServerBackup = async () => {
+    const backupData = await syncService.restoreServerBackup();
+    if (backupData && Array.isArray(backupData.tasks)) {
+      setTasks(backupData.tasks);
+      if (backupData.categories) setCategories(backupData.categories);
+      setSyncStatus('synced');
+      setLastSyncedTime(syncService.getLastSynced());
+      return true;
+    }
+    return false;
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       {/* Navbar */}
       <Navbar
         activeTab={activeTab}
@@ -563,7 +611,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
         {/* Active Reminders & Deadline Banner with Snooze Options */}
         <ActiveAlertsBanner
           alerts={activeAlerts}
@@ -724,6 +772,7 @@ export default function App() {
         shareUrl={syncService.getShareUrl()}
         onExportBackup={handleExportBackup}
         onImportBackup={handleImportBackup}
+        onRestoreServerBackup={handleRestoreServerBackup}
         lastSyncedTime={lastSyncedTime}
       />
 

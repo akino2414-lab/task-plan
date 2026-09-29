@@ -1,0 +1,502 @@
+{
+  "data": {
+    "tasks": [
+      {
+        "title": "【日本史】古代から中世の基礎通史理解",
+        "description": "古代から鎌倉・室町時代までの歴史的背景と因果関係を把握する。",
+        "priority": "medium",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "日本史",
+          "基礎"
+        ],
+        "dueDate": "2026-10-05",
+        "estimatedMinutes": 360,
+        "subtasks": [
+          {
+            "id": "sub_e8sw5g1",
+            "title": "時代ごとの政治体制の変遷をまとめる",
+            "completed": false
+          },
+          {
+            "id": "sub_c0hhbn6",
+            "title": "主要な文化の特色をノートに書き出す",
+            "completed": false
+          },
+          {
+            "id": "sub_k0rlufs",
+            "title": "教科書の該当範囲の用語確認テストを行う",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_zcry3_0",
+        "order": 6,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "title": "【世界史】古代文明と主要王朝の構造理解",
+        "description": "四大文明と地中海世界を中心とした歴史の流れを理解する。",
+        "priority": "medium",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "世界史",
+          "基礎"
+        ],
+        "dueDate": "2026-10-08",
+        "estimatedMinutes": 360,
+        "subtasks": [
+          {
+            "id": "sub_gj8ylik",
+            "title": "四大文明の立地と特色の比較表を作成",
+            "completed": false
+          },
+          {
+            "id": "sub_kho8wka",
+            "title": "ギリシャ・ローマ文明の重要用語整理",
+            "completed": false
+          },
+          {
+            "id": "sub_l6ytybu",
+            "title": "地図を参照しながら地域ごとの推移を確認",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_phugq_1",
+        "order": 7,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "title": "【地理】系統地理の基礎（自然環境と気候）",
+        "description": "世界の気候帯と地形、自然環境が産業に与える影響を学ぶ。",
+        "priority": "medium",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "地理",
+          "基礎"
+        ],
+        "dueDate": "2026-10-12",
+        "estimatedMinutes": 360,
+        "subtasks": [
+          {
+            "id": "sub_3fmwoew",
+            "title": "ケッペンの気候区分を暗記",
+            "completed": false
+          },
+          {
+            "id": "sub_2341ev2",
+            "title": "地形図の読み方と読解演習",
+            "completed": false
+          },
+          {
+            "id": "sub_6dntl05",
+            "title": "自然環境と農業・工業の関連性を整理",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_vfah1_2",
+        "order": 8,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "title": "【公民】現代社会と憲法の基本原則",
+        "description": "日本国憲法の基本的人権と平和主義について理解する。",
+        "priority": "medium",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "公民",
+          "基礎"
+        ],
+        "dueDate": "2026-10-16",
+        "estimatedMinutes": 360,
+        "subtasks": [
+          {
+            "id": "sub_5i4nyxp",
+            "title": "国民主権・基本的人権・平和主義の定義確認",
+            "completed": false
+          },
+          {
+            "id": "sub_dxucswv",
+            "title": "憲法判例の代表的な事例を3件調査",
+            "completed": false
+          },
+          {
+            "id": "sub_5gdil05",
+            "title": "統治機構の仕組みを図解する",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_ic63u_3",
+        "order": 9,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "title": "【日本史】近世から近代・現代の重要論点演習",
+        "description": "江戸時代から戦後の日本まで、近代化の過程に焦点を当てた演習。",
+        "priority": "high",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "日本史",
+          "演習"
+        ],
+        "dueDate": "2026-10-22",
+        "estimatedMinutes": 420,
+        "subtasks": [
+          {
+            "id": "sub_19ahvm8",
+            "title": "明治維新の重要法令まとめ",
+            "completed": false
+          },
+          {
+            "id": "sub_6rhcxut",
+            "title": "戦後改革の主要施策の振り返り",
+            "completed": false
+          },
+          {
+            "id": "sub_a1cnm54",
+            "title": "過去問形式での論述練習",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_mtoxt_4",
+        "order": 10,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "title": "【世界史】近現代史の国際関係と変容",
+        "description": "産業革命から世界大戦、冷戦に至るまでの歴史的転換点を確認する。",
+        "priority": "high",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "世界史",
+          "演習"
+        ],
+        "dueDate": "2026-10-28",
+        "estimatedMinutes": 420,
+        "subtasks": [
+          {
+            "id": "sub_sw6zpmo",
+            "title": "市民革命の比較表作成",
+            "completed": false
+          },
+          {
+            "id": "sub_3gu9uhw",
+            "title": "二度の世界大戦の原因と結末を整理",
+            "completed": false
+          },
+          {
+            "id": "sub_bv47rtp",
+            "title": "冷戦期の世界地図と勢力図の把握",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_52fuj_5",
+        "order": 11,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "title": "【地理】地誌と統計データの読解演習",
+        "description": "世界の各地域の特性と統計資料を活用した分析力を養う。",
+        "priority": "high",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "地理",
+          "演習"
+        ],
+        "dueDate": "2026-11-04",
+        "estimatedMinutes": 420,
+        "subtasks": [
+          {
+            "id": "sub_g7nswdn",
+            "title": "主要国の産業構造と人口統計の分析",
+            "completed": false
+          },
+          {
+            "id": "sub_0z5vgyc",
+            "title": "地域別の特徴をまとめたノートの完成",
+            "completed": false
+          },
+          {
+            "id": "sub_v60moyt",
+            "title": "環境・資源問題に関する資料の読解演習",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_uf8xs_6",
+        "order": 12,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "title": "【公民】現代の経済と国際社会の課題",
+        "description": "市場経済、金融、国際協力、環境問題等の時事的なトピックを扱う。",
+        "priority": "high",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "公民",
+          "演習"
+        ],
+        "dueDate": "2026-11-10",
+        "estimatedMinutes": 420,
+        "subtasks": [
+          {
+            "id": "sub_kn5c1nu",
+            "title": "経済指標（GDP等）の理解",
+            "completed": false
+          },
+          {
+            "id": "sub_pcny1cx",
+            "title": "国際機関の役割と課題の整理",
+            "completed": false
+          },
+          {
+            "id": "sub_pm9bfyy",
+            "title": "時事問題を絡めた用語の復習",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_cw9ex_7",
+        "order": 13,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "title": "【4科目総合】最終調整と横断的総復習",
+        "description": "全4科目の知識を横断的に統合し、最終模擬試験形式の演習を行う。",
+        "priority": "urgent",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "日本史",
+          "世界史",
+          "地理",
+          "公民",
+          "総合"
+        ],
+        "dueDate": "2026-11-27",
+        "estimatedMinutes": 600,
+        "subtasks": [
+          {
+            "id": "sub_nv3bvdl",
+            "title": "分野横断型の総合模試を実施",
+            "completed": false
+          },
+          {
+            "id": "sub_pjppz0c",
+            "title": "誤答箇所の徹底分析と重点補強",
+            "completed": false
+          },
+          {
+            "id": "sub_lifepo2",
+            "title": "全範囲の暗記カード見直し",
+            "completed": false
+          },
+          {
+            "id": "sub_w0m7wo4",
+            "title": "試験本番に向けた時間配分の確認",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "id": "task_ai_1790665996029_14ovr_8",
+        "order": 14,
+        "createdAt": "2026-09-29T07:13:16.029Z"
+      },
+      {
+        "id": "task_1",
+        "title": "重要プレゼン資料の構成案作成",
+        "description": "来期プロジェクトの予算獲得に向けた提案スライド作成。要件の洗い出しとスケジュール策定。",
+        "priority": "urgent",
+        "status": "done",
+        "category": "work",
+        "tags": [
+          "急ぎ",
+          "プレゼン",
+          "企画"
+        ],
+        "dueDate": "2026-09-29",
+        "dueTime": "17:00",
+        "estimatedMinutes": 60,
+        "order": 1,
+        "subtasks": [
+          {
+            "id": "s1",
+            "title": "骨子アウトライン作成",
+            "completed": true
+          },
+          {
+            "id": "s2",
+            "title": "競合調査の数値反映",
+            "completed": false
+          },
+          {
+            "id": "s3",
+            "title": "デザイン調整とPDF書き出し",
+            "completed": false
+          }
+        ],
+        "reminders": [
+          {
+            "id": "rem_1",
+            "datetime": "2026-09-29T06:55",
+            "label": "事前リマインダー"
+          }
+        ],
+        "soundType": "bell",
+        "createdAt": "2026-09-29T05:45:27.893Z",
+        "completedAt": "2026-09-29T06:48:47.507Z"
+      },
+      {
+        "id": "task_2",
+        "title": "週次定例チームミーティング準備",
+        "description": "進捗共有スプレッドシートのアップデートと各メンバーの課題集約。",
+        "priority": "high",
+        "status": "in_progress",
+        "category": "work",
+        "tags": [
+          "定例",
+          "チーム"
+        ],
+        "dueDate": "2026-09-30",
+        "dueTime": "10:00",
+        "estimatedMinutes": 30,
+        "order": 2,
+        "subtasks": [
+          {
+            "id": "s4",
+            "title": "課題点のアジェンダ化",
+            "completed": false
+          }
+        ],
+        "reminders": [],
+        "soundType": "chime",
+        "createdAt": "2026-09-29T04:45:27.893Z"
+      },
+      {
+        "id": "task_3",
+        "title": "資格試験対策（模擬テスト第3回）",
+        "description": "制限時間90分で過去問演習を実施し、間違えた問題の解説ノートをまとめる。",
+        "priority": "medium",
+        "status": "todo",
+        "category": "study",
+        "tags": [
+          "勉強",
+          "試験"
+        ],
+        "dueDate": "2026-10-01",
+        "dueTime": "20:00",
+        "estimatedMinutes": 90,
+        "order": 3,
+        "subtasks": [],
+        "reminders": [],
+        "soundType": "marimba",
+        "createdAt": "2026-09-29T02:45:27.893Z"
+      },
+      {
+        "id": "task_4",
+        "title": "ジョギング＆ストレッチ（5km）",
+        "description": "健康維持のための有酸素運動。",
+        "priority": "low",
+        "status": "done",
+        "category": "health",
+        "tags": [
+          "運動",
+          "健康"
+        ],
+        "dueDate": "2026-09-29",
+        "dueTime": "08:00",
+        "estimatedMinutes": 45,
+        "order": 4,
+        "subtasks": [],
+        "reminders": [],
+        "soundType": "pulse",
+        "createdAt": "2026-09-28T06:45:27.893Z",
+        "completedAt": "2026-09-29T06:45:27.893Z"
+      },
+      {
+        "id": "task_5",
+        "title": "日用品の買い出し・補充",
+        "description": "洗剤、トイレットペーパー、常備薬などの買い出し。",
+        "priority": "medium",
+        "status": "in_progress",
+        "category": "errands",
+        "tags": [
+          "買い物"
+        ],
+        "dueDate": "2026-10-02",
+        "estimatedMinutes": 30,
+        "order": 5,
+        "subtasks": [],
+        "reminders": [],
+        "createdAt": "2026-09-29T01:12:07.893Z",
+        "soundType": "chime"
+      }
+    ],
+    "categories": [
+      {
+        "id": "work",
+        "name": "仕事・業務",
+        "color": "#3b82f6",
+        "icon": "Briefcase"
+      },
+      {
+        "id": "personal",
+        "name": "プライベート",
+        "color": "#10b981",
+        "icon": "User"
+      },
+      {
+        "id": "study",
+        "name": "学習・勉強",
+        "color": "#8b5cf6",
+        "icon": "BookOpen"
+      },
+      {
+        "id": "health",
+        "name": "健康・運動",
+        "color": "#ec4899",
+        "icon": "Heart"
+      },
+      {
+        "id": "errands",
+        "name": "買い物・用事",
+        "color": "#f59e0b",
+        "icon": "ShoppingBag"
+      }
+    ],
+    "availableTags": [
+      "日本史",
+      "基礎",
+      "世界史",
+      "地理",
+      "公民",
+      "演習",
+      "総合",
+      "急ぎ",
+      "プレゼン",
+      "企画",
+      "定例",
+      "チーム",
+      "勉強",
+      "試験",
+      "運動",
+      "健康",
+      "買い物"
+    ],
+    "version": 1790666047228
+  },
+  "updatedAt": 1790666043766
+}

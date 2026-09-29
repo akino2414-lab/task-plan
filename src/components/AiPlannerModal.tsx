@@ -11,12 +11,15 @@ import {
   Target,
   Lightbulb,
   Check,
+  Send,
+  MessageSquare,
 } from 'lucide-react';
 import {
   Task,
   Category,
   AIPlanResult,
   AIGeneratedGoalPlan,
+  PlanChatMessage,
   PRIORITY_CONFIG,
 } from '../types';
 
@@ -48,6 +51,11 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
   const [planError, setPlanError] = useState<string | null>(null);
   const [appliedSuccessfully, setAppliedSuccessfully] = useState(false);
 
+  // Chat Refine state for Mode 1
+  const [existingChatHistory, setExistingChatHistory] = useState<PlanChatMessage[]>([]);
+  const [existingChatInput, setExistingChatInput] = useState('');
+  const [isRefiningExisting, setIsRefiningExisting] = useState(false);
+
   // Mode 2: Goal breakdown state
   const [goalInput, setGoalInput] = useState('');
   const [goalDays, setGoalDays] = useState<number>(90);
@@ -56,6 +64,11 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
   const [goalPlanResult, setGoalPlanResult] = useState<AIGeneratedGoalPlan | null>(null);
   const [goalError, setGoalError] = useState<string | null>(null);
   const [goalAddedSuccessfully, setGoalAddedSuccessfully] = useState(false);
+
+  // Chat Refine state for Mode 2
+  const [goalChatHistory, setGoalChatHistory] = useState<PlanChatMessage[]>([]);
+  const [goalChatInput, setGoalChatInput] = useState('');
+  const [isRefiningGoal, setIsRefiningGoal] = useState(false);
 
   if (!isOpen) return null;
 
@@ -97,11 +110,78 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
 
       const data: AIPlanResult = await res.json();
       setPlanResult(data);
+      setExistingChatHistory([
+        {
+          id: 'init_' + Date.now(),
+          role: 'assistant',
+          content: '日別スケジュールを作成しました！「土日に集中させたい」「平日の負担を軽くして」「〇〇をもっと前倒しして」など、ご要望を送信すると自動で計画を再調整します。',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
     } catch (err: any) {
       console.error(err);
       setPlanError(err.message || 'AI計画の生成中にエラーが発生しました。再試行してください。');
     } finally {
       setIsPlanning(false);
+    }
+  };
+
+  // Refine existing plan via interactive chat
+  const handleRefineExisting = async (overridePrompt?: string) => {
+    const text = (overridePrompt || existingChatInput).trim();
+    if (!text || isRefiningExisting || !planResult) return;
+
+    const userMsg: PlanChatMessage = {
+      id: 'msg_u_' + Date.now(),
+      role: 'user',
+      content: text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setExistingChatHistory((prev) => [...prev, userMsg]);
+    setExistingChatInput('');
+    setIsRefiningExisting(true);
+
+    try {
+      const res = await fetch('/api/ai/refine-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planType: 'schedule',
+          currentPlan: planResult,
+          userMessage: text,
+          history: existingChatHistory.map((m) => ({ role: m.role, content: m.content })),
+          allTasks: tasks,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'ブラッシュアップに失敗しました');
+      }
+
+      const data = await res.json();
+      if (data.updatedPlan) {
+        setPlanResult(data.updatedPlan);
+      }
+      const aiMsg: PlanChatMessage = {
+        id: 'msg_ai_' + Date.now(),
+        role: 'assistant',
+        content: data.replyMessage || 'ご要望を反映してスケジュールを更新しました！',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setExistingChatHistory((prev) => [...prev, aiMsg]);
+    } catch (err: any) {
+      console.error('Refine existing error:', err);
+      const errAiMsg: PlanChatMessage = {
+        id: 'msg_err_' + Date.now(),
+        role: 'assistant',
+        content: `⚠️ ${err.message || '調整中にエラーが発生しました。もう一度お試しください。'}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setExistingChatHistory((prev) => [...prev, errAiMsg]);
+    } finally {
+      setIsRefiningExisting(false);
     }
   };
 
@@ -114,11 +194,19 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
 
     planResult.schedule.forEach((day) => {
       day.allocatedTaskIds.forEach((taskId) => {
-        updates.push({
-          taskId,
-          newDueDate: day.date,
-          newOrder: currentOrder++,
-        });
+        const actualTask =
+          tasks.find((t) => t.id === taskId) ||
+          tasks.find((t) => t.title.trim() === String(taskId).trim()) ||
+          tasks.find((t) => taskId.includes(t.id) || t.id.includes(taskId)) ||
+          tasks.find((t) => t.title.includes(String(taskId)) || String(taskId).includes(t.title));
+
+        if (actualTask) {
+          updates.push({
+            taskId: actualTask.id,
+            newDueDate: day.date,
+            newOrder: currentOrder++,
+          });
+        }
       });
     });
 
@@ -155,11 +243,77 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
 
       const data: AIGeneratedGoalPlan = await res.json();
       setGoalPlanResult(data);
+      setGoalChatHistory([
+        {
+          id: 'init_goal_' + Date.now(),
+          role: 'assistant',
+          content: '目標ロードマップを作成しました！「科目の配分を調整して」「土日に演習を寄せて」「模擬試験の回数を増やして」など、気になる点を伝えて何度でもブラッシュアップできます。',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
     } catch (err: any) {
       console.error(err);
       setGoalError(err.message || 'ロードマップの生成中にエラーが発生しました。再試行してください。');
     } finally {
       setIsGeneratingGoal(false);
+    }
+  };
+
+  // Refine goal roadmap via interactive chat
+  const handleRefineGoal = async (overridePrompt?: string) => {
+    const text = (overridePrompt || goalChatInput).trim();
+    if (!text || isRefiningGoal || !goalPlanResult) return;
+
+    const userMsg: PlanChatMessage = {
+      id: 'msg_u_' + Date.now(),
+      role: 'user',
+      content: text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setGoalChatHistory((prev) => [...prev, userMsg]);
+    setGoalChatInput('');
+    setIsRefiningGoal(true);
+
+    try {
+      const res = await fetch('/api/ai/refine-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planType: 'goal',
+          currentPlan: goalPlanResult,
+          userMessage: text,
+          history: goalChatHistory.map((m) => ({ role: m.role, content: m.content })),
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'ブラッシュアップに失敗しました');
+      }
+
+      const data = await res.json();
+      if (data.updatedPlan) {
+        setGoalPlanResult(data.updatedPlan);
+      }
+      const aiMsg: PlanChatMessage = {
+        id: 'msg_ai_' + Date.now(),
+        role: 'assistant',
+        content: data.replyMessage || 'ご要望を反映してロードマップを更新しました！',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setGoalChatHistory((prev) => [...prev, aiMsg]);
+    } catch (err: any) {
+      console.error('Refine goal error:', err);
+      const errAiMsg: PlanChatMessage = {
+        id: 'msg_err_' + Date.now(),
+        role: 'assistant',
+        content: `⚠️ ${err.message || '調整中にエラーが発生しました。もう一度お試しください。'}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setGoalChatHistory((prev) => [...prev, errAiMsg]);
+    } finally {
+      setIsRefiningGoal(false);
     }
   };
 
@@ -218,33 +372,35 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
         </div>
 
         {/* Tab switcher */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 pt-2 bg-slate-50/50 dark:bg-slate-850">
+        <div className="grid grid-cols-2 border-b border-slate-200 dark:border-slate-800 px-2 sm:px-6 pt-2 bg-slate-50/50 dark:bg-slate-850 gap-1 sm:gap-2">
           <button
             onClick={() => setActiveMode('existing')}
-            className={`flex items-center gap-2 pb-3 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 pb-2.5 sm:pb-3 px-2 sm:px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors ${
               activeMode === 'existing'
                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
-            <CalendarDays className="w-4 h-4" />
-            <span>未完了タスクを日別に自動配分 ({pendingTasks.length}件)</span>
+            <CalendarDays className="w-4 h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">未完了タスクを日別に自動配分 ({pendingTasks.length}件)</span>
+            <span className="sm:hidden text-center truncate">タスク配分 ({pendingTasks.length})</span>
           </button>
           <button
             onClick={() => setActiveMode('goal')}
-            className={`flex items-center gap-2 pb-3 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 pb-2.5 sm:pb-3 px-2 sm:px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors ${
               activeMode === 'goal'
                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
-            <Target className="w-4 h-4" />
-            <span>新しい目標から日別ロードマップ作成</span>
+            <Target className="w-4 h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">新しい目標から日別ロードマップ作成</span>
+            <span className="sm:hidden text-center truncate">目標ロードマップ</span>
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 max-h-[72vh] overflow-y-auto space-y-6">
+        <div className="p-3.5 sm:p-6 max-h-[72vh] overflow-y-auto space-y-5 sm:space-y-6">
           {activeMode === 'existing' ? (
             /* MODE 1: Schedule Existing Tasks */
             <div className="space-y-5">
@@ -334,6 +490,19 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                   />
                 </div>
 
+                {pendingTasks.length === 0 && (
+                  <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span>💡 未完了タスクが現在ありません。上の「目標ロードマップ作成」タブから新しい目標を入力してスケジュールを作成してください。</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMode('goal')}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs whitespace-nowrap self-start sm:self-auto"
+                    >
+                      目標ロードマップへ切替
+                    </button>
+                  </div>
+                )}
+
                 {planError && (
                   <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between">
                     <span>{planError}</span>
@@ -393,7 +562,14 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     <div className="grid grid-cols-1 gap-3">
                       {planResult.schedule.map((day) => {
                         const dayTasks = day.allocatedTaskIds
-                          .map((tid) => tasks.find((t) => t.id === tid))
+                          .map((tid) => {
+                            return (
+                              tasks.find((t) => t.id === tid) ||
+                              tasks.find((t) => t.title.trim() === String(tid).trim()) ||
+                              tasks.find((t) => tid.includes(t.id) || t.id.includes(tid)) ||
+                              tasks.find((t) => t.title.includes(String(tid)) || String(tid).includes(t.title))
+                            );
+                          })
                           .filter(Boolean) as Task[];
 
                         return (
@@ -425,30 +601,36 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
 
                             {/* Allocated Task Chips */}
                             <div className="space-y-1.5">
-                              {dayTasks.map((t) => {
-                                const pConf = PRIORITY_CONFIG[t.priority];
-                                return (
-                                  <div
-                                    key={t.id}
-                                    className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-700"
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <span className={`w-2 h-2 rounded-full ${pConf.dotColor}`} />
-                                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                                        {t.title}
-                                      </span>
+                              {dayTasks.length > 0 ? (
+                                dayTasks.map((t) => {
+                                  const pConf = PRIORITY_CONFIG[t.priority];
+                                  return (
+                                    <div
+                                      key={t.id}
+                                      className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-700"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className={`w-2 h-2 rounded-full ${pConf.dotColor}`} />
+                                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                          {t.title}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${pConf.badgeBg}`}>
+                                          {pConf.shortLabel}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400">
+                                          {t.estimatedMinutes || 30}分
+                                        </span>
+                                      </div>
                                     </div>
-                                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${pConf.badgeBg}`}>
-                                        {pConf.shortLabel}
-                                      </span>
-                                      <span className="text-[10px] text-slate-400">
-                                        {t.estimatedMinutes || 30}分
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })
+                              ) : (
+                                <div className="text-xs text-slate-500 dark:text-slate-400 p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-dashed border-slate-200 dark:border-slate-700">
+                                  割り当てタスク: {day.allocatedTaskIds.join(', ')}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -456,15 +638,137 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     </div>
                   </div>
 
+                  {/* Interactive Chat Refine for Schedule */}
+                  <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-gradient-to-b from-indigo-50/70 to-slate-50/50 dark:from-indigo-950/40 dark:to-slate-900/60 p-3.5 sm:p-4 space-y-3 shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5">
+                          <span>AIと対話してスケジュールをブラッシュアップ</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/70 dark:text-indigo-300 font-semibold">
+                            対話調整可能
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          「土日に集中させたい」「平日の負担を軽くして」「重要タスクを前倒し」など自由に指示できます
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quick suggestion chips */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-500" /> ワンタップで指示:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          '土日に重いタスクを寄せて平日の負担を軽減して',
+                          '1日あたりの作業時間を均等に分散させて',
+                          '最優先・緊急のタスクをもっと前倒しして',
+                          '週の終わりに予備日・調整バッファを設けて',
+                        ].map((chip, cIdx) => (
+                          <button
+                            key={cIdx}
+                            type="button"
+                            disabled={isRefiningExisting}
+                            onClick={() => handleRefineExisting(chip)}
+                            className="text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors font-medium disabled:opacity-50 text-left"
+                          >
+                            💬 {chip}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Chat stream */}
+                    {existingChatHistory.length > 0 && (
+                      <div className="max-h-56 overflow-y-auto space-y-2 p-3 rounded-xl bg-white/90 dark:bg-slate-850/90 border border-slate-200/80 dark:border-slate-800">
+                        {existingChatHistory.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`flex gap-2 ${
+                              msg.role === 'user' ? 'justify-end' : 'justify-start'
+                            }`}
+                          >
+                            {msg.role === 'assistant' && (
+                              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 text-[10px] mt-0.5 shadow-2xs">
+                                <Sparkles className="w-3 h-3 text-amber-300" />
+                              </div>
+                            )}
+                            <div
+                              className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${
+                                msg.role === 'user'
+                                  ? 'bg-indigo-600 text-white rounded-br-xs'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/60 dark:border-slate-700/60 rounded-bl-xs'
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap">{msg.content}</p>
+                              <span
+                                className={`block text-[9px] mt-1 ${
+                                  msg.role === 'user'
+                                    ? 'text-indigo-200 text-right'
+                                    : 'text-slate-400'
+                                }`}
+                              >
+                                {msg.timestamp}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+
+                        {isRefiningExisting && (
+                          <div className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400 py-1">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="font-medium animate-pulse">
+                              AIがスケジュールを再調整中...
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Chat Input */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleRefineExisting();
+                      }}
+                      className="flex gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={existingChatInput}
+                        onChange={(e) => setExistingChatInput(e.target.value)}
+                        placeholder="例: 平日の負担を軽くして土日に寄せて / プレゼン資料をもっと前倒しして"
+                        disabled={isRefiningExisting}
+                        className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!existingChatInput.trim() || isRefiningExisting}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-sm shadow-indigo-600/20"
+                      >
+                        {isRefiningExisting ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4" />
+                        )}
+                        <span>送信</span>
+                      </button>
+                    </form>
+                  </div>
+
                   {/* Apply Schedule to Tasks & Calendar */}
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                     <span className="text-xs text-slate-500">
                       適用すると、各タスクの期限日(dueDate)がこの計画通りに自動設定されます
                     </span>
                     <button
                       onClick={handleApplyToCalendar}
                       disabled={appliedSuccessfully}
-                      className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 ${
+                      className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 ${
                         appliedSuccessfully
                           ? 'bg-emerald-600 text-white'
                           : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30'
@@ -491,16 +795,61 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
             <div className="space-y-5">
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    達成したい目標やプロジェクト名
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      達成したい目標やプロジェクト名
+                    </label>
+                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                      複数科目の均等配分にも対応
+                    </span>
+                  </div>
                   <input
                     type="text"
                     value={goalInput}
                     onChange={(e) => setGoalInput(e.target.value)}
-                    placeholder="例: 来週のプレゼン発表を成功させる / 1週間で新しいプロトタイプを作る"
+                    placeholder="例: 社会科の勉強　日本史、世界史、地理、公民を均等に学習できる / TOEIC 800点突破"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
+
+                  {/* Quick Goal Examples */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                      <Lightbulb className="w-3 h-3 text-amber-500" /> おすすめ例:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGoalInput('社会科の勉強　日本史、世界史、地理、公民を均等に学習できる');
+                        setGoalCategory(categories.find(c => c.id === 'study')?.id || 'study');
+                        setGoalDays(90);
+                      }}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors font-medium flex items-center gap-1"
+                    >
+                      <span>📚 社会科（日本史・世界史・地理・公民を均等学習）</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGoalInput('TOEIC 800点突破・英語学習ロードマップ');
+                        setGoalCategory(categories.find(c => c.id === 'study')?.id || 'study');
+                        setGoalDays(60);
+                      }}
+                      className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors"
+                    >
+                      🎯 TOEIC 800点突破
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGoalInput('Webプログラミング基礎からアプリ完成');
+                        setGoalCategory(categories.find(c => c.id === 'work')?.id || 'work');
+                        setGoalDays(30);
+                      }}
+                      className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors"
+                    >
+                      💻 Webアプリ開発
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -619,6 +968,181 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     </p>
                   </div>
 
+                  {/* Subject Balance Analysis (if social studies / multi-subject goal) */}
+                  {(() => {
+                    const subjects = [
+                      { name: '日本史', color: 'bg-orange-50 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300 border-orange-200 dark:border-orange-800/70', dot: 'bg-orange-500' },
+                      { name: '世界史', color: 'bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200 dark:border-blue-800/70', dot: 'bg-blue-500' },
+                      { name: '地理', color: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/70', dot: 'bg-emerald-500' },
+                      { name: '公民', color: 'bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300 border-purple-200 dark:border-purple-800/70', dot: 'bg-purple-500' },
+                    ];
+                    const detected = subjects
+                      .map((s) => ({
+                        ...s,
+                        count: goalPlanResult.tasks.filter(
+                          (t) => t.title.includes(s.name) || (t.tags && t.tags.includes(s.name))
+                        ).length,
+                      }))
+                      .filter((s) => s.count > 0);
+
+                    if (detected.length >= 2) {
+                      return (
+                        <div className="p-3.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                            <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                              <span>⚖️ 科目均等バランス学習分析</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800">
+                                均等配分 100%
+                              </span>
+                            </span>
+                            <span className="text-slate-500 text-[11px]">
+                              4科目を偏りなくローテーション学習できます
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {detected.map((s) => (
+                              <div
+                                key={s.name}
+                                className={`p-2 rounded-lg border flex items-center justify-between ${s.color}`}
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-xs">
+                                  <span className={`w-2 h-2 rounded-full ${s.dot}`} />
+                                  <span>{s.name}</span>
+                                </div>
+                                <span className="font-black text-xs font-mono">{s.count}回</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  {/* Interactive Chat Refine for Goal Roadmap */}
+                  <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-gradient-to-b from-indigo-50/70 to-slate-50/50 dark:from-indigo-950/40 dark:to-slate-900/60 p-3.5 sm:p-4 space-y-3 shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5">
+                          <span>AIと対話してロードマップをブラッシュアップ</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/70 dark:text-indigo-300 font-semibold">
+                            何度でも対話修正可能
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          「科目の配分を調整して」「週末に模試を追加して」「期間を短縮して」など自由にチャットで指示できます
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quick suggestion chips */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-500" /> ワンタップで改善指示:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          '社会科4科目を完全均等にローテーションして',
+                          '週末に模擬テスト・過去問演習タスクを追加して',
+                          '前半の基礎固め期間をもっと長めにして',
+                          '1タスクあたりの学習時間を短縮して',
+                          '苦手分野の克服・復習タスクを差し込んで',
+                          '期日を少し前倒しにして余裕を持たせて',
+                        ].map((chip, cIdx) => (
+                          <button
+                            key={cIdx}
+                            type="button"
+                            disabled={isRefiningGoal}
+                            onClick={() => handleRefineGoal(chip)}
+                            className="text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors font-medium disabled:opacity-50 text-left"
+                          >
+                            💬 {chip}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Chat Messages Stream */}
+                    {goalChatHistory.length > 0 && (
+                      <div className="max-h-56 overflow-y-auto space-y-2 p-3 rounded-xl bg-white/90 dark:bg-slate-850/90 border border-slate-200/80 dark:border-slate-800">
+                        {goalChatHistory.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`flex gap-2 ${
+                              msg.role === 'user' ? 'justify-end' : 'justify-start'
+                            }`}
+                          >
+                            {msg.role === 'assistant' && (
+                              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 text-[10px] mt-0.5 shadow-2xs">
+                                <Sparkles className="w-3 h-3 text-amber-300" />
+                              </div>
+                            )}
+                            <div
+                              className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${
+                                msg.role === 'user'
+                                  ? 'bg-indigo-600 text-white rounded-br-xs'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/60 dark:border-slate-700/60 rounded-bl-xs'
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap">{msg.content}</p>
+                              <span
+                                className={`block text-[9px] mt-1 ${
+                                  msg.role === 'user'
+                                    ? 'text-indigo-200 text-right'
+                                    : 'text-slate-400'
+                                }`}
+                              >
+                                {msg.timestamp}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+
+                        {isRefiningGoal && (
+                          <div className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400 py-1">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="font-medium animate-pulse">
+                              AIがご要望を反映してロードマップを再構築中...
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Chat Input */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleRefineGoal();
+                      }}
+                      className="flex gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={goalChatInput}
+                        onChange={(e) => setGoalChatInput(e.target.value)}
+                        placeholder="例: 世界史のタスクをもう少し増やして / 最終週に総復習タスクを追加して"
+                        disabled={isRefiningGoal}
+                        className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!goalChatInput.trim() || isRefiningGoal}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-sm shadow-indigo-600/20"
+                      >
+                        {isRefiningGoal ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4" />
+                        )}
+                        <span>送信</span>
+                      </button>
+                    </form>
+                  </div>
+
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                       生成された日別タスク ({goalPlanResult.tasks.length}件)
@@ -627,11 +1151,11 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     {goalPlanResult.tasks.map((gt, idx) => (
                       <div
                         key={idx}
-                        className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 shadow-sm flex items-center justify-between gap-3"
+                        className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
                       >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 flex-shrink-0">
                               {gt.dueDate}
                             </span>
                             <span className="text-xs font-bold text-slate-900 dark:text-white">
@@ -639,10 +1163,35 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                             </span>
                           </div>
                           {gt.description && (
-                            <p className="text-[11px] text-slate-500 mt-0.5">{gt.description}</p>
+                            <p className="text-[11px] text-slate-500 mt-1">{gt.description}</p>
+                          )}
+                          {gt.tags && gt.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {gt.tags.map((tg, tIdx) => {
+                                const isSubj = ['日本史', '世界史', '地理', '公民'].includes(tg);
+                                return (
+                                  <span
+                                    key={tIdx}
+                                    className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                                      isSubj
+                                        ? tg === '日本史'
+                                          ? 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300'
+                                          : tg === '世界史'
+                                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                          : tg === '地理'
+                                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                          : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                                    }`}
+                                  >
+                                    #{tg}
+                                  </span>
+                                );
+                              })}
+                            </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center">
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                               PRIORITY_CONFIG[gt.priority]?.badgeBg
@@ -658,11 +1207,11 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     ))}
                   </div>
 
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-end">
                     <button
                       onClick={handleAddGoalTasksToList}
                       disabled={goalAddedSuccessfully}
-                      className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 ${
+                      className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95 w-full sm:w-auto ${
                         goalAddedSuccessfully
                           ? 'bg-emerald-600 text-white'
                           : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30'

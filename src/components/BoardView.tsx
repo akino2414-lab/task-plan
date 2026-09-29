@@ -69,36 +69,38 @@ export const BoardView: React.FC<BoardViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Board Grouping Toggle Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-500">表示形式:</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full">
+        <div className="flex items-center gap-2 max-w-full overflow-x-auto">
+          <span className="text-xs font-semibold text-slate-500 flex-shrink-0">表示形式:</span>
           <div className="flex bg-slate-200/80 dark:bg-slate-800 p-0.5 rounded-lg text-xs font-medium">
             <button
               onClick={() => setBoardGrouping('status')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md transition-all ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-md transition-all ${
                 boardGrouping === 'status'
                   ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-slate-400'
               }`}
             >
               <Kanban className="w-3.5 h-3.5" />
-              <span>進捗別 (未着手 / 進行中 / 完了)</span>
+              <span className="hidden sm:inline">進捗別 (未着手 / 進行中 / 完了)</span>
+              <span className="sm:hidden">進捗別</span>
             </button>
             <button
               onClick={() => setBoardGrouping('priority')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md transition-all ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-md transition-all ${
                 boardGrouping === 'priority'
                   ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-slate-400'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>優先度マトリクス (緊急 / 高 / 中 / 低)</span>
+              <span className="hidden sm:inline">優先度マトリクス (緊急 / 高 / 中 / 低)</span>
+              <span className="sm:hidden">優先度別</span>
             </button>
           </div>
         </div>
 
-        <span className="text-xs text-slate-400 hidden sm:inline">
+        <span className="text-[11px] text-slate-400 hidden sm:inline">
           ※カードをドラッグ＆ドロップして順番変更や移動ができます
         </span>
       </div>

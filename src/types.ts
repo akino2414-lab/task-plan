@@ -80,6 +80,13 @@ export interface AIGeneratedGoalPlan {
   }>;
 }
 
+export interface PlanChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
 export const SOUND_OPTIONS: { id: NotificationSoundType; name: string; description: string }[] = [
   { id: 'chime', name: '🔔 チャイム (Chime)', description: '優しく透明感のある高音チャイム' },
   { id: 'bell', name: '⏰ ベル (Bell)', description: 'しっかりと気づかせるクリアなベル音' },

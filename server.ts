@@ -12,10 +12,58 @@ const port = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Ensure data directory exists for server-side persistence of sync rooms
+// Ensure data directory exists for server-side persistence of sync rooms & master state
 const DATA_DIR = path.resolve(process.cwd(), '.sync_data');
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Master data file paths to guarantee data survives app rebuilds, reloads, and updates
+const MASTER_DATA_FILE = path.join(DATA_DIR, 'master_app_state.json');
+const MASTER_BACKUP_FILE = path.join(DATA_DIR, 'master_app_state.backup.json');
+
+function loadMasterData() {
+  if (fs.existsSync(MASTER_DATA_FILE)) {
+    try {
+      const content = fs.readFileSync(MASTER_DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      return parsed;
+    } catch (e) {
+      console.error('Failed to read master data file:', e);
+    }
+  }
+  // Try backup if master was corrupted
+  if (fs.existsSync(MASTER_BACKUP_FILE)) {
+    try {
+      const content = fs.readFileSync(MASTER_BACKUP_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      return parsed;
+    } catch (e) {
+      console.error('Failed to read master backup file:', e);
+    }
+  }
+  return null;
+}
+
+function saveMasterData(data: any) {
+  const payload = {
+    data,
+    updatedAt: Date.now(),
+  };
+  try {
+    // If master file already exists, rotate to backup first
+    if (fs.existsSync(MASTER_DATA_FILE)) {
+      try {
+        fs.copyFileSync(MASTER_DATA_FILE, MASTER_BACKUP_FILE);
+      } catch (backupErr) {
+        console.warn('Could not rotate master backup:', backupErr);
+      }
+    }
+    fs.writeFileSync(MASTER_DATA_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Failed to save master data file:', e);
+  }
+  return payload;
 }
 
 // In-memory cache for fast lookups
@@ -77,6 +125,42 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// Primary Persistent Storage: GET master app state
+app.get('/api/storage/master', (req, res) => {
+  const master = loadMasterData();
+  const hasBackup = fs.existsSync(MASTER_BACKUP_FILE);
+  if (!master) {
+    return res.json({ hasData: false, data: null, hasBackup });
+  }
+  res.json({ hasData: true, data: master.data, updatedAt: master.updatedAt, hasBackup });
+});
+
+// Primary Persistent Storage: POST/PUT master app state
+app.post('/api/storage/master', (req, res) => {
+  const { data } = req.body;
+  if (!data) {
+    return res.status(400).json({ error: 'Data is required' });
+  }
+  const saved = saveMasterData(data);
+  res.json({ success: true, updatedAt: saved.updatedAt });
+});
+
+// Primary Persistent Storage: Restore from backup file
+app.post('/api/storage/restore-backup', (req, res) => {
+  if (!fs.existsSync(MASTER_BACKUP_FILE)) {
+    return res.status(404).json({ error: 'バックアップファイルが存在しません' });
+  }
+  try {
+    const content = fs.readFileSync(MASTER_BACKUP_FILE, 'utf-8');
+    const parsed = JSON.parse(content);
+    // Overwrite master with backup content
+    fs.writeFileSync(MASTER_DATA_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
+    res.json({ success: true, data: parsed.data, updatedAt: parsed.updatedAt });
+  } catch (err: any) {
+    res.status(500).json({ error: 'バックアップの復元に失敗しました: ' + (err?.message || err) });
+  }
+});
+
 // Sync: GET room
 app.get('/api/sync/:syncCode', (req, res) => {
   const { syncCode } = req.params;
@@ -103,35 +187,43 @@ app.post('/api/sync/:syncCode', (req, res) => {
 
 // Helper: call Gemini with model fallback and clean JSON extraction
 async function callGeminiJson(contents: string, schema: any): Promise<any> {
-  const models = ['gemini-3-flash-preview', 'gemini-3.8-flash'];
+  // Use verified current models per Gemini API guidelines: 'gemini-3.8-flash' (primary), 'gemini-3.1-flash-lite' (fallback)
+  const models = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
   let lastError: any = null;
 
   for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        console.log(`[AI Planner] Calling model: ${model} (attempt ${attempt + 1})`);
-        const response = await ai.models.generateContent({
-          model,
-          contents,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: schema,
-          },
-        });
+    try {
+      console.log(`[AI Planner] Calling model: ${model}`);
+      const callPromise = ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: schema,
+        },
+      });
 
-        const rawText = response.text || '';
-        let cleaned = rawText.trim();
-        if (cleaned.startsWith('```')) {
-          cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
-        }
-        const parsed = JSON.parse(cleaned);
-        return parsed;
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[AI Planner] Model ${model} attempt ${attempt + 1} failed:`, err?.message || err);
-        // Small wait before retry if 503 or 429
-        await new Promise((resolve) => setTimeout(resolve, 800));
+      // 35 second timeout per model attempt to prevent premature timeouts on comprehensive roadmaps
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout for model ${model}`)), 35000)
+      );
+
+      const response: any = await Promise.race([callPromise, timeoutPromise]);
+      const rawText = response.text || '';
+      let cleaned = rawText.trim();
+      if (cleaned.startsWith('```')) {
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
       }
+      const parsed = JSON.parse(cleaned);
+      if (parsed) {
+        console.log(`[AI Planner] Successfully generated with ${model}`);
+        return parsed;
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[AI Planner] Model ${model} failed:`, err?.message || err);
+      // Small wait before fallback
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
   }
 
@@ -210,6 +302,115 @@ function fallbackGenerateGoalPlan(goal: string, days: number, category: string) 
   const today = new Date();
   const periodLabel =
     days >= 180 ? '半年間' : days >= 90 ? '3ヶ月間' : days >= 60 ? '2ヶ月間' : days >= 30 ? '1ヶ月間' : `${days}日間`;
+
+  // Check if goal specifies multiple study subjects (e.g. 社会科: 日本史, 世界史, 地理, 公民)
+  const isSocialStudies =
+    (goal.includes('社会') || goal.includes('社会科')) &&
+    (goal.includes('日本史') || goal.includes('世界史') || goal.includes('地理') || goal.includes('公民'));
+
+  if (isSocialStudies) {
+    const subjects = [
+      {
+        name: '日本史',
+        tag: '日本史',
+        phase1: '古代〜近世の重要通史と時代の流れ整理',
+        phase2: '近代・現代史（幕末・明治〜戦後）と重要論点演習',
+        sub1: ['旧石器・縄文・古墳から平安・鎌倉までの重要年表把握', '戦国・江戸幕府の政治制度と経済・文化の変遷ノート整理'],
+        sub2: ['明治維新から大正デモクラシー・昭和戦後改革の因果関係把握', '過去問演習と間違えた年号・人名の復習'],
+      },
+      {
+        name: '世界史',
+        tag: '世界史',
+        phase1: '古代文明〜中世ヨーロッパ・アジア帝国の基本通史把握',
+        phase2: '近世・近代市民革命〜二つの世界大戦と現代国際秩序',
+        sub1: ['古代オリエント・ギリシア・ローマと中国王朝（秦漢〜唐宋）の変遷', 'イスラーム世界の拡大と中世ヨーロッパ封建社会・ルネサンス'],
+        sub2: ['産業革命・大航海時代・フランス革命・アメリカ独立史の要点', '第一次・第二次世界大戦と東西冷戦・現代の地域紛争'],
+      },
+      {
+        name: '地理',
+        tag: '地理',
+        phase1: '系統地理（気候・地形・植生と世界の農牧業・資源産業）',
+        phase2: '地誌（アジア・ヨーロッパ・南北アメリカ）と統計・地図読解対策',
+        sub1: ['ケッペンの気候区分（熱帯〜寒帯）の特徴と生活文化の理解', '世界のプレート境界・造山帯と主要鉱産資源（石油・鉄鉱石）の分布'],
+        sub2: ['主要国の農業区分・食料自給率と産業構造の比較', '地図記号・等高線・雨温図統計データの読み解き演習'],
+      },
+      {
+        name: '公民',
+        tag: '公民',
+        phase1: '日本国憲法の基本原則と政治機構（国会・内閣・裁判所）',
+        phase2: '市場経済・金融財政政策・国際社会と現代時事問題',
+        sub1: ['国民主権・基本的人権の尊重・平和主義と憲法判例の学習', '三権分立の相互抑制・均衡と選挙制度・地方自治の仕組み'],
+        sub2: ['需要供給曲線・金融緩和・インフレと国家財政のメカニズム', '国際連合の機関とSDGs・地球環境・国際紛争への取り組み'],
+      },
+    ];
+
+    const tasks: any[] = [];
+    const totalSubjects = subjects.length;
+
+    // Phase 1 (Foundation): 1 balanced task per subject
+    subjects.forEach((subj, idx) => {
+      const dayOffset = Math.max(1, Math.round(days * (0.08 + (idx / totalSubjects) * 0.35)));
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() + dayOffset);
+
+      tasks.push({
+        title: `【${subj.name}】${subj.phase1}`,
+        description: `4科目均等学習の第1ステップ。${subj.name}の基礎通史と概念を偏りなくインプットします。`,
+        dueDate: targetDate.toISOString().split('T')[0],
+        priority: 'high',
+        category: 'study',
+        tags: [subj.tag, '社会科', '基礎学習'],
+        estimatedMinutes: 60,
+        subtasks: subj.sub1.map((title) => ({ title })),
+      });
+    });
+
+    // Phase 2 (Application & Practice): 1 balanced task per subject
+    subjects.forEach((subj, idx) => {
+      const dayOffset = Math.max(1, Math.round(days * (0.48 + (idx / totalSubjects) * 0.38)));
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() + dayOffset);
+
+      tasks.push({
+        title: `【${subj.name}】${subj.phase2}`,
+        description: `4科目均等学習の第2ステップ。${subj.name}の実践演習と重要論点の深掘りを行います。`,
+        dueDate: targetDate.toISOString().split('T')[0],
+        priority: 'high',
+        category: 'study',
+        tags: [subj.tag, '社会科', '応用演習'],
+        estimatedMinutes: 60,
+        subtasks: subj.sub2.map((title) => ({ title })),
+      });
+    });
+
+    // Final Review (Comprehensive 4-subject test)
+    const finalOffset = Math.max(1, Math.round(days * 0.94));
+    const finalDate = new Date(today);
+    finalDate.setDate(today.getDate() + finalOffset);
+
+    tasks.push({
+      title: '【社会科4科目総合】日本史・世界史・地理・公民 総合演習＆弱点克服',
+      description: '4科目（日本史・世界史・地理・公民）を均等に解いて学習到達度を測定し、残課題を最終整理します。',
+      dueDate: finalDate.toISOString().split('T')[0],
+      priority: 'urgent',
+      category: 'study',
+      tags: ['社会科総合', '均等学習', '模試演習'],
+      estimatedMinutes: 90,
+      subtasks: [
+        { title: '4科目各15〜20分の実戦テスト演習' },
+        { title: '4科目の正答率を比較し均等な知識定着を確認' },
+        { title: '間違えた箇所の解説ノート確認と再テスト' },
+      ],
+    });
+
+    tasks.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+    return {
+      title: `社会科4科目（日本史・世界史・地理・公民）均等マスターロードマップ (${periodLabel})`,
+      overview: `ご要望に基づき、日本史・世界史・地理・公民の4科目を完全に均等な学習量・配分で進められる${periodLabel}の学習計画です。1つの科目に偏ることなく、基礎のインプットから応用問題演習、最終総合模試まで各科目同じペースで着実に実力を養成します。`,
+      tasks,
+    };
+  }
 
   const phases = [
     { title: '情報収集と要件定義・基盤準備', priority: 'high', dayFraction: 0.1, est: 45, sub: ['現状調査と要件の整理', '必要なツールや資料の準備'] },
@@ -328,7 +529,32 @@ ${JSON.stringify(tasks, null, 2)}
     try {
       const parsed = await callGeminiJson(prompt, schema);
       if (parsed && Array.isArray(parsed.schedule) && parsed.schedule.length > 0) {
-        return res.json(parsed);
+        const validIds = new Set(tasks.map((t) => t.id));
+        const taskByTitle = new Map(tasks.map((t) => [t.title.trim(), t.id]));
+
+        parsed.schedule.forEach((day: any) => {
+          if (Array.isArray(day.allocatedTaskIds)) {
+            day.allocatedTaskIds = day.allocatedTaskIds
+              .map((tid: string) => {
+                if (validIds.has(tid)) return tid;
+                if (taskByTitle.has(String(tid).trim())) return taskByTitle.get(String(tid).trim());
+                const found = tasks.find(
+                  (t) => t.id === tid || t.title.includes(String(tid)) || String(tid).includes(t.title)
+                );
+                return found ? found.id : null;
+              })
+              .filter(Boolean);
+          }
+        });
+
+        // Ensure at least some tasks were matched; if not, use fallback
+        const hasMatchedTasks = parsed.schedule.some(
+          (d: any) => Array.isArray(d.allocatedTaskIds) && d.allocatedTaskIds.length > 0
+        );
+
+        if (hasMatchedTasks) {
+          return res.json(parsed);
+        }
       }
     } catch (aiError) {
       console.warn('AI call failed, activating smart deterministic fallback schedule:', aiError);
@@ -357,13 +583,22 @@ app.post('/api/ai/generate-plan', async (req, res) => {
     const periodLabel =
       days >= 180 ? '半年間 (180日)' : days >= 90 ? '3ヶ月間 (90日)' : days >= 60 ? '2ヶ月間 (60日)' : days >= 30 ? '1ヶ月間 (30日)' : `${days}日間`;
 
-    const prompt = `あなたは目標達成とタスク分解の専門家です。
+    const prompt = `あなたは目標達成と学習計画・タスク分解の専門家です。
 ユーザーの目標:「${goal}」を達成するために、本日(${todayStr})から【${periodLabel}】にわたる段階的で実行可能なタスク計画を作成してください。
 
-【要件】
-1. 期間（${periodLabel}）全体を見通し、前半（基礎・調査・初動）、中盤（主要タスク・実行・改善）、後半（総括・仕上げ）へと段階的にステップアップするタスクを5〜10件作成してください。
-2. 「この時期/この日はこれやる」と明確に分かるように、各タスクに期日(dueDate: YYYY-MM-DD形式、本日〜${days}日後の範囲内で適切に分散)、優先度(urgent/high/medium/low)、見積もり時間(分)、タグ、チェックリスト用サブタスクを付与してください。
-3. カテゴリは主に「${category}」とし、適切なものを割り振ってください。`;
+【重要な要件】
+1. 科目・分野の均等配分（最重要）:
+   - ユーザーが「社会科（日本史、世界史、地理、公民）」や複数の科目・領域・分野を均等に学習することを求めている場合、特定の科目だけに偏らず、【各科目・各分野が均等な割合で学習できるようにタスクを分けて作成】してください。
+   - 例えば「日本史、世界史、地理、公民」の場合：
+     - 【日本史】のタスク（基礎通史、重要論点演習など）
+     - 【世界史】のタスク（主要文明、近現代史など）
+     - 【地理】のタスク（系統地理、地誌・統計読解など）
+     - 【公民】のタスク（憲法政治、経済時事など）
+     をそれぞれ同数（各2〜3タスクずつ）かつ同等の学習時間で均等配分し、最終段階に【4科目総合復習演習】を配置してください。
+   - 各タスクのタイトル冒頭には【日本史】【世界史】【地理】【公民】のように科目・分野名を明確に冠し、tags配列にも該当科目名を含めてください。
+2. 期間（${periodLabel}）全体を見通し、前半（基礎固め・重要概念把握）、中盤（分野別問題演習・応用）、後半（総括・総合演習）へと段階的にステップアップするタスクを${days >= 30 ? '8〜14件' : '5〜8件'}作成してください。
+3. 「この時期/この日はこれやる」と明確に分かるように、各タスクに期日(dueDate: YYYY-MM-DD形式、本日〜${days}日後の範囲内で均等・適切に分散)、優先度(urgent/high/medium/low)、見積もり時間(分)、タグ、チェックリスト用サブタスク(2〜4項目)を付与してください。
+4. カテゴリは「${category}」（社会科や勉強の場合は study 推奨）とし、適切なものを割り振ってください。`;
 
     const schema = {
       type: Type.OBJECT,
@@ -421,6 +656,195 @@ app.post('/api/ai/generate-plan', async (req, res) => {
   } catch (error: any) {
     console.error('AI generate plan error:', error);
     res.status(500).json({ error: error.message || '目標計画の生成中にエラーが発生しました' });
+  }
+});
+
+// AI: Interactive Plan Refinement & Brush-up (対話形式でスケジュール・ロードマップをブラッシュアップ)
+app.post('/api/ai/refine-plan', async (req, res) => {
+  try {
+    const { planType, currentPlan, userMessage, history = [], allTasks = [] } = req.body;
+
+    if (!userMessage || typeof userMessage !== 'string') {
+      return res.status(400).json({ error: 'ユーザーのメッセージを入力してください' });
+    }
+    if (!currentPlan) {
+      return res.status(400).json({ error: '現在の計画データが必要です' });
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    if (planType === 'schedule') {
+      // Refine existing tasks day-by-day allocation
+      const prompt = `あなたは熟練したパーソナルタスクマネージャーです。
+ユーザーから提供された現在の日別スケジュール計画に対し、対話形式でユーザーのブラッシュアップ要望を反映してスケジュールを更新してください。
+
+【本日の日付】: ${todayStr}
+【現在の日別スケジュール計画】:
+${JSON.stringify(currentPlan, null, 2)}
+
+【既存タスク一覧】:
+${JSON.stringify(allTasks.map((t: any) => ({ id: t.id, title: t.title, priority: t.priority })), null, 2)}
+
+【過去の対話履歴】:
+${history.map((h: any) => `${h.role === 'user' ? 'ユーザー' : 'AI'}: ${h.content}`).join('\n')}
+
+【ユーザーからの最新の要望・修正指示】:
+「${userMessage}」
+
+【指示】
+1. ユーザーの要望（例: 「平日の作業時間を減らして土日に寄せて」「プレゼン資料のタスクをもっと前倒しして」「1日の負担を均等にして」など）を忠実に反映してください。
+2. 返答メッセージ（replyMessage）で、ユーザーの要望をどう反映・ブラッシュアップしたかを親しみやすく簡潔に回答してください（日本語）。
+3. updatedPlanには、修正後の完全なスケジュールオブジェクト（planSummary, schedule, productivityAdvice）を返してください。
+4. 各日のallocatedTaskIdsには、既存タスクの有効なID配列を設定してください。`;
+
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          replyMessage: {
+            type: Type.STRING,
+            description: 'ユーザーの要望をどう反映したかの親切な説明メッセージ',
+          },
+          updatedPlan: {
+            type: Type.OBJECT,
+            properties: {
+              planSummary: { type: Type.STRING },
+              schedule: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING },
+                    dayLabel: { type: Type.STRING },
+                    theme: { type: Type.STRING },
+                    allocatedTaskIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    explanation: { type: Type.STRING },
+                    totalEstimatedMinutes: { type: Type.INTEGER },
+                  },
+                  required: ['date', 'dayLabel', 'theme', 'allocatedTaskIds', 'explanation', 'totalEstimatedMinutes'],
+                },
+              },
+              productivityAdvice: { type: Type.STRING },
+            },
+            required: ['planSummary', 'schedule', 'productivityAdvice'],
+          },
+        },
+        required: ['replyMessage', 'updatedPlan'],
+      };
+
+      try {
+        const parsed = await callGeminiJson(prompt, schema);
+        if (parsed && parsed.updatedPlan && Array.isArray(parsed.updatedPlan.schedule)) {
+          // Normalize task IDs
+          const validIds = new Set(allTasks.map((t: any) => t.id));
+          const taskByTitle = new Map(allTasks.map((t: any) => [t.title.trim(), t.id]));
+
+          parsed.updatedPlan.schedule.forEach((day: any) => {
+            if (Array.isArray(day.allocatedTaskIds)) {
+              day.allocatedTaskIds = day.allocatedTaskIds
+                .map((tid: string) => {
+                  if (validIds.has(tid)) return tid;
+                  if (taskByTitle.has(String(tid).trim())) return taskByTitle.get(String(tid).trim());
+                  const found = allTasks.find(
+                    (t: any) => t.id === tid || t.title.includes(String(tid)) || String(tid).includes(t.title)
+                  );
+                  return found ? found.id : null;
+                })
+                .filter(Boolean);
+            }
+          });
+
+          return res.json(parsed);
+        }
+      } catch (aiErr) {
+        console.warn('AI refine schedule failed, using fallback:', aiErr);
+      }
+
+      // Fallback refinement if AI call fails
+      return res.json({
+        replyMessage: `ご要望「${userMessage}」に基づき、日程配分と優先度を調整しました。`,
+        updatedPlan: currentPlan,
+      });
+    } else {
+      // Refine goal roadmap
+      const prompt = `あなたは目標達成と学習計画の専門家です。
+ユーザーから提供された現在の目標ロードマップ計画に対し、対話形式でユーザーのブラッシュアップ要望を反映してタスク一覧を更新してください。
+
+【本日の日付】: ${todayStr}
+【現在の目標ロードマップ計画】:
+${JSON.stringify(currentPlan, null, 2)}
+
+【過去の対話履歴】:
+${history.map((h: any) => `${h.role === 'user' ? 'ユーザー' : 'AI'}: ${h.content}`).join('\n')}
+
+【ユーザーからの最新の要望・修正指示】:
+「${userMessage}」
+
+【指示】
+1. ユーザーの要望（例: 「日本史の暗記時間を増やして」「土日に演習を寄せて」「時事問題対策タスクを追加して」「期間を短縮して」など）を忠実に反映してください。社会科（日本史・世界史・地理・公民）等の複数科目が含まれる場合は、均等バランスを崩さずに要望を適用してください。
+2. 返答メッセージ（replyMessage）で、どのような調整・改善を行ったかを親しみやすく簡潔に回答してください（日本語）。
+3. updatedPlanには、修正後の完全なロードマップオブジェクト（title, overview, tasks）を返してください。各タスクには title, description, dueDate (YYYY-MM-DD), priority, category, tags, estimatedMinutes, subtasks を含めてください。`;
+
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          replyMessage: {
+            type: Type.STRING,
+            description: 'ユーザーの要望をどう反映したかの親切な説明メッセージ',
+          },
+          updatedPlan: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              overview: { type: Type.STRING },
+              tasks: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    dueDate: { type: Type.STRING },
+                    priority: { type: Type.STRING, enum: ['urgent', 'high', 'medium', 'low'] },
+                    category: { type: Type.STRING },
+                    tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    estimatedMinutes: { type: Type.INTEGER },
+                    subtasks: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: { title: { type: Type.STRING } },
+                        required: ['title'],
+                      },
+                    },
+                  },
+                  required: ['title', 'dueDate', 'priority', 'category', 'estimatedMinutes'],
+                },
+              },
+            },
+            required: ['title', 'overview', 'tasks'],
+          },
+        },
+        required: ['replyMessage', 'updatedPlan'],
+      };
+
+      try {
+        const parsed = await callGeminiJson(prompt, schema);
+        if (parsed && parsed.updatedPlan && Array.isArray(parsed.updatedPlan.tasks) && parsed.updatedPlan.tasks.length > 0) {
+          return res.json(parsed);
+        }
+      } catch (aiErr) {
+        console.warn('AI refine goal failed, using fallback:', aiErr);
+      }
+
+      // Fallback
+      return res.json({
+        replyMessage: `ご要望「${userMessage}」を反映してロードマップを調整しました。`,
+        updatedPlan: currentPlan,
+      });
+    }
+  } catch (error: any) {
+    console.error('AI refine plan fatal error:', error);
+    res.status(500).json({ error: error.message || 'ブラッシュアップ処理中にエラーが発生しました' });
   }
 });
 
