@@ -40,19 +40,21 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
   const [activeMode, setActiveMode] = useState<'existing' | 'goal'>('existing');
 
   // Mode 1: Existing tasks scheduler state
-  const [daysToPlan, setDaysToPlan] = useState<number>(5);
+  const [daysToPlan, setDaysToPlan] = useState<number>(30);
   const [targetHoursPerDay, setTargetHoursPerDay] = useState<number>(4);
   const [userGoalNote, setUserGoalNote] = useState<string>('');
   const [isPlanning, setIsPlanning] = useState(false);
   const [planResult, setPlanResult] = useState<AIPlanResult | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
   const [appliedSuccessfully, setAppliedSuccessfully] = useState(false);
 
   // Mode 2: Goal breakdown state
   const [goalInput, setGoalInput] = useState('');
-  const [goalDays, setGoalDays] = useState(5);
+  const [goalDays, setGoalDays] = useState<number>(90);
   const [goalCategory, setGoalCategory] = useState(categories[0]?.id || 'work');
   const [isGeneratingGoal, setIsGeneratingGoal] = useState(false);
   const [goalPlanResult, setGoalPlanResult] = useState<AIGeneratedGoalPlan | null>(null);
+  const [goalError, setGoalError] = useState<string | null>(null);
   const [goalAddedSuccessfully, setGoalAddedSuccessfully] = useState(false);
 
   if (!isOpen) return null;
@@ -64,6 +66,7 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
     if (pendingTasks.length === 0) return;
     setIsPlanning(true);
     setPlanResult(null);
+    setPlanError(null);
     setAppliedSuccessfully(false);
 
     try {
@@ -88,14 +91,15 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
       });
 
       if (!res.ok) {
-        throw new Error('AI計画の生成に失敗しました');
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'AI計画の生成に失敗しました');
       }
 
       const data: AIPlanResult = await res.json();
       setPlanResult(data);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'AI計画の生成中にエラーが発生しました');
+      setPlanError(err.message || 'AI計画の生成中にエラーが発生しました。再試行してください。');
     } finally {
       setIsPlanning(false);
     }
@@ -130,6 +134,7 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
     if (!goalInput.trim()) return;
     setIsGeneratingGoal(true);
     setGoalPlanResult(null);
+    setGoalError(null);
     setGoalAddedSuccessfully(false);
 
     try {
@@ -144,14 +149,15 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
       });
 
       if (!res.ok) {
-        throw new Error('ロードマップの生成に失敗しました');
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'ロードマップの生成に失敗しました');
       }
 
       const data: AIGeneratedGoalPlan = await res.json();
       setGoalPlanResult(data);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'ロードマップの生成中にエラーが発生しました');
+      setGoalError(err.message || 'ロードマップの生成中にエラーが発生しました。再試行してください。');
     } finally {
       setIsGeneratingGoal(false);
     }
@@ -247,18 +253,48 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      計画期間 (日数)
+                      計画期間 (短期〜長期)
                     </label>
                     <select
                       value={daysToPlan}
                       onChange={(e) => setDaysToPlan(Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white font-medium"
                     >
-                      <option value={3}>直近 3日間 (短期集中)</option>
-                      <option value={5}>平日 5日間 (今週中)</option>
-                      <option value={7}>1週間 (7日間バランス)</option>
-                      <option value={14}>2週間 (中長期配分)</option>
+                      <option value={3}>3日間 (直近・短期集中スプリント)</option>
+                      <option value={5}>5日間 (平日1週間・今週中)</option>
+                      <option value={7}>1週間 (7日間バランス計画)</option>
+                      <option value={14}>2週間 (スプリント・中期配分)</option>
+                      <option value={30}>1ヶ月 (30日間マイルストーン計画)</option>
+                      <option value={60}>2ヶ月 (60日間プロジェクト計画)</option>
+                      <option value={90}>3ヶ月 (四半期クォーター計画)</option>
+                      <option value={180}>半年 (180日間長期ロードマップ)</option>
                     </select>
+
+                    {/* Quick Preset Buttons */}
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {[
+                        { label: '3日', value: 3 },
+                        { label: '1週間', value: 7 },
+                        { label: '2週間', value: 14 },
+                        { label: '1ヶ月', value: 30 },
+                        { label: '2ヶ月', value: 60 },
+                        { label: '3ヶ月', value: 90 },
+                        { label: '半年', value: 180 },
+                      ].map((p) => (
+                        <button
+                          key={p.value}
+                          type="button"
+                          onClick={() => setDaysToPlan(p.value)}
+                          className={`text-[10px] px-2 py-0.5 rounded-md font-semibold border transition-colors ${
+                            daysToPlan === p.value
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div>
@@ -270,11 +306,18 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                       onChange={(e) => setTargetHoursPerDay(Number(e.target.value))}
                       className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
                     >
-                      <option value={2}>2時間 (スキマ時間・副業)</option>
+                      <option value={2}>2時間 (スキマ時間・副業ペース)</option>
                       <option value={4}>4時間 (半日集中)</option>
                       <option value={6}>6時間 (フルタイム)</option>
                       <option value={8}>8時間 (最大集中)</option>
                     </select>
+
+                    {daysToPlan >= 30 && (
+                      <p className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-2 bg-indigo-50 dark:bg-indigo-950/40 p-1.5 rounded-lg border border-indigo-100 dark:border-indigo-900/50">
+                        🌟 <strong>長期計画モード</strong>:
+                        {daysToPlan >= 180 ? '半年間' : daysToPlan >= 90 ? '3ヶ月間' : daysToPlan >= 60 ? '2ヶ月間' : '1ヶ月間'}の重要マイルストーン日にタスクを無理なく配分します。
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -286,10 +329,22 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     type="text"
                     value={userGoalNote}
                     onChange={(e) => setUserGoalNote(e.target.value)}
-                    placeholder="例: 月曜は会議が多いので軽めにして、火曜と水曜に重いタスクを集中させたい"
+                    placeholder="例: 月初・月終わりに重いタスクを集中させたい / 前半で基盤を固めたい"
                     className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                 </div>
+
+                {planError && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between">
+                    <span>{planError}</span>
+                    <button
+                      onClick={handleGenerateExistingPlan}
+                      className="px-2.5 py-1 rounded bg-rose-600 text-white font-semibold text-[11px] hover:bg-rose-700"
+                    >
+                      再試行
+                    </button>
+                  </div>
+                )}
 
                 <div className="pt-2 flex justify-end">
                   <button
@@ -451,19 +506,47 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      達成までの日数
+                      達成までの目標期間 (短期〜長期)
                     </label>
                     <select
                       value={goalDays}
                       onChange={(e) => setGoalDays(Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white font-medium"
                     >
-                      <option value={3}>3日間 (急ぎ)</option>
+                      <option value={3}>3日間 (短期スプリント)</option>
                       <option value={5}>5日間 (平日1週間)</option>
-                      <option value={7}>7日間 (1週間)</option>
-                      <option value={10}>10日間</option>
-                      <option value={14}>14日間 (2週間)</option>
+                      <option value={7}>1週間 (7日間ロードマップ)</option>
+                      <option value={14}>2週間 (2週間スプリント)</option>
+                      <option value={30}>1ヶ月 (30日間ロードマップ)</option>
+                      <option value={60}>2ヶ月 (60日間中期計画)</option>
+                      <option value={90}>3ヶ月 (四半期クォーター計画)</option>
+                      <option value={180}>半年 (180日間長期ロードマップ)</option>
                     </select>
+
+                    {/* Quick Preset Buttons */}
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {[
+                        { label: '1週間', value: 7 },
+                        { label: '2週間', value: 14 },
+                        { label: '1ヶ月', value: 30 },
+                        { label: '2ヶ月', value: 60 },
+                        { label: '3ヶ月', value: 90 },
+                        { label: '半年', value: 180 },
+                      ].map((p) => (
+                        <button
+                          key={p.value}
+                          type="button"
+                          onClick={() => setGoalDays(p.value)}
+                          className={`text-[10px] px-2 py-0.5 rounded-md font-semibold border transition-colors ${
+                            goalDays === p.value
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div>
@@ -481,8 +564,27 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                         </option>
                       ))}
                     </select>
+
+                    {goalDays >= 30 && (
+                      <p className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-2 bg-indigo-50 dark:bg-indigo-950/40 p-1.5 rounded-lg border border-indigo-100 dark:border-indigo-900/50">
+                        🎯 <strong>ロードマップ生成</strong>:
+                        {goalDays >= 180 ? '半年間' : goalDays >= 90 ? '3ヶ月間' : goalDays >= 60 ? '2ヶ月間' : '1ヶ月間'}の期間全体を俯瞰し、段階的なマイルストーンタスクを作成します。
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                {goalError && (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between">
+                    <span>{goalError}</span>
+                    <button
+                      onClick={handleGenerateGoalRoadmap}
+                      className="px-2.5 py-1 rounded bg-rose-600 text-white font-semibold text-[11px] hover:bg-rose-700"
+                    >
+                      再試行
+                    </button>
+                  </div>
+                )}
 
                 <div className="pt-2 flex justify-end">
                   <button
