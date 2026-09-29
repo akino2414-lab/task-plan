@@ -1,0 +1,6 @@
+{
+  "name": "TaskFlow - 優先順位可視化・AI計画・カレンダー同期ToDo",
+  "description": "優先順位の可視化、ドラッグ＆ドロップ、期限通知、PC・スマホ同期、タグ・カテゴリ分類、カレンダー表示、生産性ダッシュボード、AIによる日程計画作成を備えたスマートToDoアプリ。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
