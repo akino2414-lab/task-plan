@@ -612,14 +612,14 @@ export const HabitsView: React.FC<HabitsViewProps> = ({
                         <span>{streak}日</span>
                       </div>
 
-                      {/* Convert to Today's Task */}
+                      {/* Convert to Today's Task (visible on all screens including smartphone) */}
                       <button
                         onClick={() => handleConvertToTaskWithFeedback(habit)}
-                        className="hidden sm:flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-slate-50 hover:bg-indigo-50 dark:bg-slate-700/60 dark:hover:bg-indigo-950/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:border-indigo-300 transition-colors font-medium"
+                        className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors font-semibold active:scale-95"
                         title="この習慣をToDoタスク一覧にも追加する"
                       >
-                        <Plus className="w-3 h-3" />
-                        <span>タスク化</span>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>タスクに追加</span>
                       </button>
 
                       {/* Edit */}

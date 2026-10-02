@@ -29,6 +29,7 @@ interface AiPlannerModalProps {
   onClose: () => void;
   tasks: Task[];
   categories: Category[];
+  initialMode?: 'existing' | 'goal';
   onApplySchedule: (taskDateUpdates: { taskId: string; newDueDate: string; newOrder?: number }[]) => void;
   onAddGeneratedTasks: (newTasks: Array<Omit<Task, 'id' | 'createdAt' | 'order'>>) => void;
 }
@@ -38,10 +39,18 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
   onClose,
   tasks,
   categories,
+  initialMode,
   onApplySchedule,
   onAddGeneratedTasks,
 }) => {
-  const [activeMode, setActiveMode] = useState<'existing' | 'goal'>('existing');
+  const [activeMode, setActiveMode] = useState<'existing' | 'goal'>(initialMode || 'goal');
+
+  // Sync mode if initialMode is provided
+  React.useEffect(() => {
+    if (initialMode) {
+      setActiveMode(initialMode);
+    }
+  }, [initialMode, isOpen]);
 
   // Mode 1: Existing tasks scheduler state
   const [daysToPlan, setDaysToPlan] = useState<number>(30);
@@ -227,6 +236,9 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
     setGoalAddedSuccessfully(false);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
       const res = await fetch('/api/ai/generate-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -235,7 +247,10 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
           days: Number(goalDays) || 30,
           category: goalCategory || 'work',
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
@@ -259,11 +274,13 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
       console.error('Goal roadmap error:', err);
       let errMsg = err.message || 'ロードマップの生成中にエラーが発生しました。再試行してください。';
       if (
+        err.name === 'AbortError' ||
+        errMsg.includes('aborted') ||
         errMsg.includes('Load failed') ||
         errMsg.includes('Failed to fetch') ||
         errMsg.includes('NetworkError')
       ) {
-        errMsg = '通信エラーが発生しました。ネットワーク接続を確認し、もう一度お試しください。';
+        errMsg = '通信が一時的にタイムアウトしました。もう一度「日別ロードマップを作成する」を押してください。';
       }
       setGoalError(errMsg);
     } finally {
@@ -969,17 +986,23 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                 <div className="pt-2 flex justify-end">
                   <button
                     type="submit"
+                    onClick={(e) => {
+                      if (!isGeneratingGoal && goalInput.trim()) {
+                        e.preventDefault();
+                        handleGenerateGoalRoadmap();
+                      }
+                    }}
                     disabled={isGeneratingGoal || !goalInput.trim()}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 transition-all disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 px-5 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/25 transition-all disabled:opacity-50 active:scale-95 w-full sm:w-auto"
                   >
                     {isGeneratingGoal ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
                         <span>目標を分解してスケジュール作成中...</span>
                       </>
                     ) : (
                       <>
-                        <Sparkles className="w-4 h-4 text-amber-300" />
+                        <Sparkles className="w-4 h-4 text-amber-300 flex-shrink-0" />
                         <span>日別ロードマップを作成する</span>
                       </>
                     )}

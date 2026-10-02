@@ -218,6 +218,7 @@ export default function App() {
   const [isSoundModalOpen, setIsSoundModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isAiPlannerModalOpen, setIsAiPlannerModalOpen] = useState(false);
+  const [plannerModalMode, setPlannerModalMode] = useState<'existing' | 'goal'>('goal');
 
   // Apply Dark Mode class to <html>
   useEffect(() => {
@@ -556,6 +557,7 @@ export default function App() {
       tasks,
       categories,
       availableTags,
+      habits,
       version: Date.now(),
     });
     setSyncStatus(success ? 'synced' : 'offline');
@@ -565,11 +567,17 @@ export default function App() {
   const handleUpdateSyncCode = (newCode: string) => {
     syncService.setSyncCode(newCode);
     setSyncCode(newCode);
+    setSyncStatus('syncing');
     // Pull from new code
     syncService.pullData().then((data) => {
       if (data && Array.isArray(data.tasks)) {
         setTasks(data.tasks);
-        if (data.categories) setCategories(data.categories);
+        if (data.categories && data.categories.length > 0) setCategories(data.categories);
+        if (Array.isArray(data.habits) && data.habits.length > 0) setHabits(data.habits);
+        setSyncStatus('synced');
+        setLastSyncedTime(syncService.getLastSynced());
+      } else {
+        setSyncStatus('synced');
       }
     });
   };
@@ -808,21 +816,49 @@ export default function App() {
         )}
 
         {activeTab === 'planner' && (
-          <div className="py-2">
-            <button
-              onClick={() => setIsAiPlannerModalOpen(true)}
-              className="w-full p-8 rounded-2xl border-2 border-dashed border-indigo-300 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 text-center hover:bg-indigo-50 transition-colors"
-            >
-              <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center mx-auto mb-3 shadow-lg shadow-indigo-600/30">
-                <span className="text-xl">✨</span>
-              </div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                AI日別計画プランナーを開く
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                「この日はこれやる、この日はこれやる」とタスクを自動配分したり、目標から日別スケジュールを作成します。
-              </p>
-            </button>
+          <div className="py-2 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Option A: Goal-based Roadmap (Direct) */}
+              <button
+                onClick={() => {
+                  setPlannerModalMode('goal');
+                  setIsAiPlannerModalOpen(true);
+                }}
+                className="p-6 sm:p-8 rounded-2xl border-2 border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-850 text-left hover:border-indigo-400 dark:hover:border-indigo-600 transition-all shadow-sm hover:shadow-md group"
+              >
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center mb-3 shadow-md shadow-indigo-600/30 group-hover:scale-105 transition-transform">
+                  <span className="text-xl">🎯</span>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <span>目標から日別ロードマップ作成</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                    おすすめ
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                  「社会科の勉強（日本史・世界史・地理・公民を均等に学習）」や「TOEIC」「プロジェクト」などの目標を入力するだけで、期間全体の段階的タスクを自動生成します。
+                </p>
+              </button>
+
+              {/* Option B: Existing Tasks Day-by-Day Scheduler */}
+              <button
+                onClick={() => {
+                  setPlannerModalMode('existing');
+                  setIsAiPlannerModalOpen(true);
+                }}
+                className="p-6 sm:p-8 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 text-left hover:border-indigo-400 dark:hover:border-indigo-600 transition-all shadow-sm hover:shadow-md group"
+              >
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-slate-700 to-indigo-700 text-white flex items-center justify-center mb-3 shadow-md shadow-slate-700/30 group-hover:scale-105 transition-transform">
+                  <span className="text-xl">📅</span>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  未完了タスクを日別に自動配分
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                  登録済みのToDoタスクを1日あたりの作業時間や優先度を考慮して、「この日はこれ、この日はこれ」と無理のない日別スケジュールに割り振ります。
+                </p>
+              </button>
+            </div>
           </div>
         )}
       </main>
@@ -881,10 +917,10 @@ export default function App() {
 
       {/* AI Planner Modal */}
       <AiPlannerModal
-        isOpen={isAiPlannerModalOpen || activeTab === 'planner'}
+        isOpen={isAiPlannerModalOpen}
+        initialMode={plannerModalMode}
         onClose={() => {
           setIsAiPlannerModalOpen(false);
-          if (activeTab === 'planner') setActiveTab('board');
         }}
         tasks={tasks}
         categories={categories}

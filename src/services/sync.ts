@@ -11,6 +11,8 @@ class SyncService {
     this.initSyncCode();
   }
 
+  private isPeerJoined: boolean = false;
+
   private generateCode(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = 'FLOW-';
@@ -28,12 +30,19 @@ class SyncService {
     const paramSync = urlParams.get('sync');
     if (paramSync && paramSync.trim()) {
       this.syncCode = paramSync.trim().toUpperCase();
+      this.isPeerJoined = true;
       localStorage.setItem('taskflow_sync_code', this.syncCode);
+      localStorage.setItem('taskflow_is_peer_joined', 'true');
       return;
     }
 
     // 2. Check LocalStorage
     const stored = localStorage.getItem('taskflow_sync_code');
+    const storedPeer = localStorage.getItem('taskflow_is_peer_joined');
+    if (storedPeer === 'true') {
+      this.isPeerJoined = true;
+    }
+
     if (stored && stored.trim()) {
       this.syncCode = stored.trim();
     } else {
@@ -48,7 +57,9 @@ class SyncService {
 
   public setSyncCode(code: string): void {
     this.syncCode = code.trim().toUpperCase();
+    this.isPeerJoined = true;
     localStorage.setItem('taskflow_sync_code', this.syncCode);
+    localStorage.setItem('taskflow_is_peer_joined', 'true');
   }
 
   public getShareUrl(): string {
@@ -61,9 +72,17 @@ class SyncService {
     return this.lastSyncedTime;
   }
 
-  // Pull data from server master store, or fallback to room sync
+  // Pull data from server room (prioritized if user connected to a peer sync code or entered via URL), or fallback to master store
   public async pullMasterOrRoomData(): Promise<SyncData | null> {
-    // 1. Try pulling master persistent data first
+    // 1. If this device opened via shared sync link or connected to a room, ALWAYS pull room data first!
+    if (this.isPeerJoined && this.syncCode) {
+      const roomData = await this.pullData();
+      if (roomData && Array.isArray(roomData.tasks)) {
+        return roomData;
+      }
+    }
+
+    // 2. Try pulling master persistent data
     try {
       const res = await fetch('/api/storage/master');
       if (res.ok) {
@@ -77,7 +96,7 @@ class SyncService {
       console.warn('Master storage pull error:', e);
     }
 
-    // 2. Fallback to room sync code
+    // 3. Fallback to room sync code
     return this.pullData();
   }
 

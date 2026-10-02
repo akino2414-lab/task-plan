@@ -74,10 +74,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Navigation View Tabs */}
-          <nav className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-0.5 sm:p-1 rounded-xl text-xs sm:text-sm font-medium">
+          <nav className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-0.5 sm:p-1 rounded-xl text-xs sm:text-sm font-medium overflow-x-auto scrollbar-none flex-1 min-w-0 max-w-fit mx-1 sm:mx-2 flex-nowrap scroll-smooth">
             <button
               onClick={() => setActiveTab('board')}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg transition-all flex-shrink-0 whitespace-nowrap ${
                 activeTab === 'board'
                   ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-xs font-semibold'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -85,11 +85,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="カンバンボード"
             >
               <Kanban className="w-4 h-4" />
-              <span className="hidden sm:inline">ボード</span>
+              <span>ボード</span>
             </button>
             <button
               onClick={() => setActiveTab('list')}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg transition-all flex-shrink-0 whitespace-nowrap ${
                 activeTab === 'list'
                   ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-xs font-semibold'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -97,11 +97,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="リスト表示"
             >
               <ListTodo className="w-4 h-4" />
-              <span className="hidden sm:inline">リスト</span>
+              <span>リスト</span>
             </button>
             <button
               onClick={() => setActiveTab('calendar')}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg transition-all flex-shrink-0 whitespace-nowrap ${
                 activeTab === 'calendar'
                   ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-xs font-semibold'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -109,11 +109,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="カレンダー表示"
             >
               <CalendarIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">カレンダー</span>
+              <span>カレンダー</span>
             </button>
             <button
               onClick={() => setActiveTab('habits')}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg transition-all flex-shrink-0 whitespace-nowrap ${
                 activeTab === 'habits'
                   ? 'bg-white dark:bg-slate-700 text-orange-600 dark:text-orange-400 shadow-xs font-semibold'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -125,7 +125,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg transition-all flex-shrink-0 whitespace-nowrap ${
                 activeTab === 'dashboard'
                   ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-xs font-semibold'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -133,11 +133,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="生産性グラフ"
             >
               <LayoutDashboard className="w-4 h-4" />
-              <span className="hidden sm:inline">分析</span>
+              <span>分析</span>
             </button>
             <button
               onClick={() => setActiveTab('planner')}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg transition-all ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg transition-all flex-shrink-0 whitespace-nowrap ${
                 activeTab === 'planner'
                   ? 'bg-indigo-600 text-white shadow-xs font-semibold'
                   : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40'
@@ -145,8 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="AIスケジュール計画立案"
             >
               <Sparkles className="w-4 h-4 text-amber-400" />
-              <span className="hidden sm:inline">AI計画</span>
-              <span className="sm:hidden text-[10px] font-bold">AI</span>
+              <span>AI計画</span>
             </button>
           </nav>
 
