@@ -21,6 +21,7 @@ import {
   AIGeneratedGoalPlan,
   PlanChatMessage,
   PRIORITY_CONFIG,
+  TaskPriority,
 } from '../types';
 
 interface AiPlannerModalProps {
@@ -231,8 +232,8 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           goal: goalInput.trim(),
-          days: goalDays,
-          category: goalCategory,
+          days: Number(goalDays) || 30,
+          category: goalCategory || 'work',
         }),
       });
 
@@ -242,6 +243,9 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
       }
 
       const data: AIGeneratedGoalPlan = await res.json();
+      if (!data || !Array.isArray(data.tasks) || data.tasks.length === 0) {
+        throw new Error('タスクデータの取得に失敗しました。もう一度お試しください。');
+      }
       setGoalPlanResult(data);
       setGoalChatHistory([
         {
@@ -252,8 +256,16 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
         },
       ]);
     } catch (err: any) {
-      console.error(err);
-      setGoalError(err.message || 'ロードマップの生成中にエラーが発生しました。再試行してください。');
+      console.error('Goal roadmap error:', err);
+      let errMsg = err.message || 'ロードマップの生成中にエラーが発生しました。再試行してください。';
+      if (
+        errMsg.includes('Load failed') ||
+        errMsg.includes('Failed to fetch') ||
+        errMsg.includes('NetworkError')
+      ) {
+        errMsg = '通信エラーが発生しました。ネットワーク接続を確認し、もう一度お試しください。';
+      }
+      setGoalError(errMsg);
     } finally {
       setIsGeneratingGoal(false);
     }
@@ -319,30 +331,36 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
 
   // Add goal tasks to task list
   const handleAddGoalTasksToList = () => {
-    if (!goalPlanResult) return;
+    if (!goalPlanResult || !Array.isArray(goalPlanResult.tasks)) return;
 
-    const formattedTasks = goalPlanResult.tasks.map((gt) => ({
-      title: gt.title,
-      description: gt.description,
-      priority: gt.priority,
-      status: 'todo' as const,
-      category: gt.category || goalCategory,
-      tags: gt.tags || ['AI計画'],
-      dueDate: gt.dueDate,
-      estimatedMinutes: gt.estimatedMinutes || 30,
-      subtasks: (gt.subtasks || []).map((st) => ({
-        id: 'sub_' + Math.random().toString(36).substring(2, 9),
-        title: st.title,
-        completed: false,
-      })),
-      reminders: [],
-    }));
+    const validPriorities = ['urgent', 'high', 'medium', 'low'];
+    const formattedTasks = goalPlanResult.tasks.map((gt) => {
+      const priority = validPriorities.includes(gt.priority) ? (gt.priority as TaskPriority) : 'medium';
+      return {
+        title: gt.title || '無題のタスク',
+        description: gt.description || '',
+        priority,
+        status: 'todo' as const,
+        category: gt.category || goalCategory || 'work',
+        tags: Array.isArray(gt.tags) && gt.tags.length > 0 ? gt.tags : ['AI計画'],
+        dueDate: gt.dueDate || new Date().toISOString().split('T')[0],
+        estimatedMinutes: Number(gt.estimatedMinutes) || 30,
+        subtasks: Array.isArray(gt.subtasks)
+          ? gt.subtasks.map((st) => ({
+              id: 'sub_' + Math.random().toString(36).substring(2, 9),
+              title: st?.title || '',
+              completed: false,
+            }))
+          : [],
+        reminders: [],
+      };
+    });
 
     onAddGeneratedTasks(formattedTasks);
     setGoalAddedSuccessfully(true);
     setTimeout(() => {
       onClose();
-    }, 1500);
+    }, 1200);
   };
 
   return (
@@ -793,7 +811,13 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
           ) : (
             /* MODE 2: Goal-to-Roadmap Generation */
             <div className="space-y-5">
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleGenerateGoalRoadmap();
+                }}
+                className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
+              >
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -807,6 +831,12 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     type="text"
                     value={goalInput}
                     onChange={(e) => setGoalInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleGenerateGoalRoadmap();
+                      }
+                    }}
                     placeholder="例: 社会科の勉強　日本史、世界史、地理、公民を均等に学習できる / TOEIC 800点突破"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
@@ -927,6 +957,7 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                   <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between">
                     <span>{goalError}</span>
                     <button
+                      type="button"
                       onClick={handleGenerateGoalRoadmap}
                       className="px-2.5 py-1 rounded bg-rose-600 text-white font-semibold text-[11px] hover:bg-rose-700"
                     >
@@ -937,7 +968,7 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
 
                 <div className="pt-2 flex justify-end">
                   <button
-                    onClick={handleGenerateGoalRoadmap}
+                    type="submit"
                     disabled={isGeneratingGoal || !goalInput.trim()}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 transition-all disabled:opacity-50"
                   >
@@ -954,7 +985,7 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     )}
                   </button>
                 </div>
-              </div>
+              </form>
 
               {/* Goal Breakdown Result */}
               {goalPlanResult && (
@@ -979,8 +1010,8 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     const detected = subjects
                       .map((s) => ({
                         ...s,
-                        count: goalPlanResult.tasks.filter(
-                          (t) => t.title.includes(s.name) || (t.tags && t.tags.includes(s.name))
+                        count: (goalPlanResult.tasks || []).filter(
+                          (t) => (t?.title || '').includes(s.name) || (Array.isArray(t?.tags) && t.tags.includes(s.name))
                         ).length,
                       }))
                       .filter((s) => s.count > 0);
@@ -1194,10 +1225,10 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                         <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center">
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              PRIORITY_CONFIG[gt.priority]?.badgeBg
+                              PRIORITY_CONFIG[gt.priority]?.badgeBg || 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
                             }`}
                           >
-                            {PRIORITY_CONFIG[gt.priority]?.shortLabel}
+                            {PRIORITY_CONFIG[gt.priority]?.shortLabel || '通常'}
                           </span>
                           <span className="text-[11px] text-slate-400">
                             {gt.estimatedMinutes || 30}分

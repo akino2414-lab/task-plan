@@ -12,10 +12,11 @@ import {
   Moon,
   Volume2,
   VolumeX,
+  Flame,
 } from 'lucide-react';
 import { SyncStatus } from '../services/sync';
 
-export type ActiveTab = 'board' | 'list' | 'calendar' | 'dashboard' | 'planner';
+export type ActiveTab = 'board' | 'list' | 'calendar' | 'habits' | 'dashboard' | 'planner';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -109,6 +110,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <CalendarIcon className="w-4 h-4" />
               <span className="hidden sm:inline">カレンダー</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('habits')}
+              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg transition-all ${
+                activeTab === 'habits'
+                  ? 'bg-white dark:bg-slate-700 text-orange-600 dark:text-orange-400 shadow-xs font-semibold'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="毎日の習慣トラッカー"
+            >
+              <Flame className={`w-4 h-4 ${activeTab === 'habits' ? 'text-orange-500' : 'text-orange-400'}`} />
+              <span>習慣</span>
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}

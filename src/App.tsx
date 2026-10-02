@@ -7,6 +7,8 @@ import {
   SyncData,
   DEFAULT_CATEGORIES,
   NotificationSoundType,
+  Habit,
+  DEFAULT_HABITS,
 } from './types';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { FilterBar } from './components/FilterBar';
@@ -14,6 +16,7 @@ import { BoardView } from './components/BoardView';
 import { ListView } from './components/ListView';
 import { CalendarView } from './components/CalendarView';
 import { DashboardView } from './components/DashboardView';
+import { HabitsView } from './components/HabitsView';
 import { TaskModal } from './components/TaskModal';
 import { ActiveAlertsBanner } from './components/ActiveAlertsBanner';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
@@ -187,6 +190,19 @@ export default function App() {
     return DEFAULT_CATEGORIES;
   });
 
+  const [habits, setHabits] = useState<Habit[]>(() => {
+    try {
+      const saved = localStorage.getItem('taskflow_habits_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to load local habits:', e);
+    }
+    return DEFAULT_HABITS;
+  });
+
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -236,20 +252,27 @@ export default function App() {
     } catch {}
   }, [categories]);
 
-  // Server master & Cloud Sync on Task / Category changes (debounced push)
+  useEffect(() => {
+    try {
+      localStorage.setItem('taskflow_habits_v1', JSON.stringify(habits));
+    } catch {}
+  }, [habits]);
+
+  // Server master & Cloud Sync on Task / Category / Habit changes (debounced push)
   useEffect(() => {
     const availableTags = Array.from(new Set(tasks.flatMap((t) => t.tags || [])));
     const syncPayload: SyncData = {
       tasks,
       categories,
       availableTags,
+      habits,
       version: Date.now(),
     };
     syncService.schedulePush(syncPayload, (status) => {
       setSyncStatus(status);
       setLastSyncedTime(syncService.getLastSynced());
     });
-  }, [tasks, categories]);
+  }, [tasks, categories, habits]);
 
   // Pull initial cloud/master persistent state on mount (protect against app update / storage clears)
   useEffect(() => {
@@ -261,6 +284,9 @@ export default function App() {
           setTasks(serverData.tasks);
           if (serverData.categories && serverData.categories.length > 0) {
             setCategories(serverData.categories);
+          }
+          if (Array.isArray(serverData.habits) && serverData.habits.length > 0) {
+            setHabits(serverData.habits);
           }
           setSyncStatus('synced');
           setLastSyncedTime(syncService.getLastSynced());
@@ -553,6 +579,7 @@ export default function App() {
       tasks,
       categories,
       availableTags,
+      habits,
       version: Date.now(),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -573,6 +600,9 @@ export default function App() {
     if (Array.isArray(imported.categories)) {
       setCategories(imported.categories);
     }
+    if (Array.isArray(imported.habits)) {
+      setHabits(imported.habits);
+    }
   };
 
   const handleRestoreServerBackup = async () => {
@@ -580,11 +610,72 @@ export default function App() {
     if (backupData && Array.isArray(backupData.tasks)) {
       setTasks(backupData.tasks);
       if (backupData.categories) setCategories(backupData.categories);
+      if (Array.isArray(backupData.habits)) setHabits(backupData.habits);
       setSyncStatus('synced');
       setLastSyncedTime(syncService.getLastSynced());
       return true;
     }
     return false;
+  };
+
+  // Habits Operations
+  const handleToggleHabitDate = (habitId: string, dateStr: string) => {
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== habitId) return h;
+        const exists = (h.completedDates || []).includes(dateStr);
+        const nextDates = exists
+          ? h.completedDates.filter((d) => d !== dateStr)
+          : [...(h.completedDates || []), dateStr];
+
+        if (!exists && soundEnabled) {
+          soundService.playSound(defaultSound);
+        }
+        return {
+          ...h,
+          completedDates: nextDates,
+        };
+      })
+    );
+  };
+
+  const handleAddHabit = (
+    newHabitData: Omit<Habit, 'id' | 'createdAt' | 'completedDates'>
+  ) => {
+    const newHabit: Habit = {
+      ...newHabitData,
+      id: 'habit_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      completedDates: [],
+      createdAt: new Date().toISOString(),
+    };
+    setHabits((prev) => [newHabit, ...prev]);
+  };
+
+  const handleUpdateHabit = (habitId: string, updates: Partial<Habit>) => {
+    setHabits((prev) => prev.map((h) => (h.id === habitId ? { ...h, ...updates } : h)));
+  };
+
+  const handleDeleteHabit = (habitId: string) => {
+    setHabits((prev) => prev.filter((h) => h.id !== habitId));
+  };
+
+  const handleConvertHabitToTask = (habit: Habit, dateStr: string) => {
+    const newTask: Task = {
+      id: 'task_from_habit_' + Date.now(),
+      title: `【習慣】${habit.title}`,
+      description: habit.description || `毎日の習慣（${habit.targetCount || 1}${habit.unit || '回'}）の達成`,
+      priority: 'high',
+      status: 'todo',
+      category: habit.category || 'personal',
+      tags: ['習慣', habit.unit || 'デイリー'],
+      dueDate: dateStr,
+      estimatedMinutes: habit.unit === '分' ? habit.targetCount : 30,
+      order: tasks.length + 1,
+      subtasks: [],
+      reminders: [],
+      createdAt: new Date().toISOString(),
+    };
+    setTasks((prev) => [newTask, ...prev]);
   };
 
   return (
@@ -626,7 +717,7 @@ export default function App() {
         />
 
         {/* Filters & Category Tags Bar (shown on Board, List, and Calendar views) */}
-        {activeTab !== 'dashboard' && (
+        {activeTab !== 'dashboard' && activeTab !== 'habits' && activeTab !== 'planner' && (
           <FilterBar
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -702,6 +793,18 @@ export default function App() {
 
         {activeTab === 'dashboard' && (
           <DashboardView tasks={tasks} categories={categories} />
+        )}
+
+        {activeTab === 'habits' && (
+          <HabitsView
+            habits={habits}
+            categories={categories}
+            onToggleHabitDate={handleToggleHabitDate}
+            onAddHabit={handleAddHabit}
+            onUpdateHabit={handleUpdateHabit}
+            onDeleteHabit={handleDeleteHabit}
+            onConvertHabitToTask={handleConvertHabitToTask}
+          />
         )}
 
         {activeTab === 'planner' && (

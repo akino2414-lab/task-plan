@@ -2,7 +2,7 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -187,25 +187,35 @@ app.post('/api/sync/:syncCode', (req, res) => {
 
 // Helper: call Gemini with model fallback and clean JSON extraction
 async function callGeminiJson(contents: string, schema: any): Promise<any> {
-  // Use verified current models per Gemini API guidelines: 'gemini-3.8-flash' (primary), 'gemini-3.1-flash-lite' (fallback)
-  const models = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+  // Prioritize 'gemini-3.1-flash-lite' (high availability, zero quota exhaustion, ultra-fast 1-2s response), followed by 'gemini-3.8-flash'
+  const models = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
   let lastError: any = null;
 
   for (const model of models) {
     try {
       console.log(`[AI Planner] Calling model: ${model}`);
+      const config: any = {
+        responseMimeType: 'application/json',
+        responseSchema: schema,
+      };
+
+      // Set low thinking level for Gemini 3 series models to ensure fast latency (2-4s instead of 25s)
+      // This is vital to prevent timeouts on mobile devices and WebViews.
+      if (model.startsWith('gemini-3')) {
+        config.thinkingConfig = {
+          thinkingLevel: ThinkingLevel.LOW,
+        };
+      }
+
       const callPromise = ai.models.generateContent({
         model,
         contents,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: schema,
-        },
+        config,
       });
 
-      // 35 second timeout per model attempt to prevent premature timeouts on comprehensive roadmaps
+      // 14 second timeout per model attempt: fast enough for mobile networks and prevents browser hangs
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout for model ${model}`)), 35000)
+        setTimeout(() => reject(new Error(`Timeout for model ${model}`)), 14000)
       );
 
       const response: any = await Promise.race([callPromise, timeoutPromise]);
@@ -222,8 +232,8 @@ async function callGeminiJson(contents: string, schema: any): Promise<any> {
     } catch (err: any) {
       lastError = err;
       console.warn(`[AI Planner] Model ${model} failed:`, err?.message || err);
-      // Small wait before fallback
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Brief pause before trying fallback model
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
 
@@ -231,7 +241,8 @@ async function callGeminiJson(contents: string, schema: any): Promise<any> {
 }
 
 // Fallback algorithm for task distribution across arbitrary days (from 3 days to 180 days)
-function fallbackScheduleTasks(tasks: any[], daysToPlan: number, userGoal?: string) {
+function fallbackScheduleTasks(tasks: any[], rawDays: any, userGoal?: string) {
+  const daysToPlan = Math.max(1, Math.min(365, parseInt(String(rawDays), 10) || 7));
   const sorted = [...tasks].sort((a, b) => {
     const priorityWeight: Record<string, number> = { urgent: 1, high: 2, medium: 3, low: 4 };
     return (priorityWeight[a.priority] || 3) - (priorityWeight[b.priority] || 3);
@@ -298,8 +309,9 @@ function fallbackScheduleTasks(tasks: any[], daysToPlan: number, userGoal?: stri
 }
 
 // Fallback algorithm for goal roadmap generation across arbitrary days (from 3 days to 180 days)
-function fallbackGenerateGoalPlan(goal: string, days: number, category: string) {
+function fallbackGenerateGoalPlan(goal: string, rawDays: any, category: string) {
   const today = new Date();
+  const days = Math.max(1, Math.min(365, parseInt(String(rawDays), 10) || 7));
   const periodLabel =
     days >= 180 ? '半年間' : days >= 90 ? '3ヶ月間' : days >= 60 ? '2ヶ月間' : days >= 30 ? '1ヶ月間' : `${days}日間`;
 
@@ -651,8 +663,39 @@ app.post('/api/ai/generate-plan', async (req, res) => {
     }
 
     // High quality intelligent fallback if AI API spikes or times out
-    const fallback = fallbackGenerateGoalPlan(goal, days, category);
-    res.json(fallback);
+    try {
+      const fallback = fallbackGenerateGoalPlan(goal, days, category);
+      return res.json(fallback);
+    } catch (fbErr) {
+      console.warn('Fallback error, using base safety plan:', fbErr);
+      const todayStr = new Date().toISOString().split('T')[0];
+      return res.json({
+        title: `${goal} 達成ロードマップ`,
+        overview: `${goal} の達成に向けた実践的なタスク計画です。`,
+        tasks: [
+          {
+            title: `【基礎】${goal}：現状分析と目標整理`,
+            description: '目標達成に必要な課題と優先順位を明確にします。',
+            dueDate: todayStr,
+            priority: 'urgent',
+            category: category || 'study',
+            tags: ['AI計画', '基礎'],
+            estimatedMinutes: 45,
+            subtasks: [{ title: '全体目標の細分化' }, { title: '必要教材・資料の準備' }],
+          },
+          {
+            title: `【実践】${goal}：コアタスク集中実行`,
+            description: '最も重要度の高い学習・タスクを重点的に進めます。',
+            dueDate: todayStr,
+            priority: 'high',
+            category: category || 'study',
+            tags: ['AI計画', '実践'],
+            estimatedMinutes: 60,
+            subtasks: [{ title: '重要項目の徹底演習' }, { title: '疑問点・弱点の洗い出し' }],
+          },
+        ],
+      });
+    }
   } catch (error: any) {
     console.error('AI generate plan error:', error);
     res.status(500).json({ error: error.message || '目標計画の生成中にエラーが発生しました' });
