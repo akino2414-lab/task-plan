@@ -1,14 +1,57 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>TaskFlow - 優先順位可視化・AI計画・カレンダー同期ToDo</title>
     <meta name="description" content="優先順位の可視化、ドラッグ＆ドロップ、期限通知、PC・スマホ同期、タグ・カテゴリ分類、カレンダー表示、生産性ダッシュボード、AIによる日程計画作成を備えたスマートToDoアプリ。" />
     <meta property="og:title" content="TaskFlow - 優先順位可視化・AI計画・カレンダー同期ToDo" />
     <meta property="og:description" content="優先順位の可視化、ドラッグ＆ドロップ、期限通知、PC・スマホ同期、タグ・カテゴリ分類、カレンダー表示、生産性ダッシュボード、AIによる日程計画作成を備えたスマートToDoアプリ。" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Vite HMR WebSocket error suppression for preview/mobile environments
+      (function() {
+        function isViteWsError(target) {
+          if (!target) return false;
+          try {
+            var msg = '';
+            if (typeof target === 'string') msg = target;
+            else if (target.reason) {
+              msg = (target.reason.message || target.reason.stack || String(target.reason)) + '';
+            } else if (target.message) {
+              msg = (target.message || target.stack || String(target)) + '';
+            } else if (target.error) {
+              msg = (target.error.message || target.error.stack || String(target.error)) + '';
+            } else {
+              msg = String(target);
+            }
+            return /websocket|vite|failed to connect/i.test(msg);
+          } catch(e) {
+            return false;
+          }
+        }
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isViteWsError(event.reason) || isViteWsError(event)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (typeof event.stopPropagation === 'function') event.stopPropagation();
+            return false;
+          }
+        }, true);
+        window.addEventListener('error', function(event) {
+          if (isViteWsError(event.message) || isViteWsError(event.error)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (typeof event.stopPropagation === 'function') event.stopPropagation();
+            return false;
+          }
+        }, true);
+      })();
+    </script>
+    <style>
+      vite-error-overlay { display: none !important; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

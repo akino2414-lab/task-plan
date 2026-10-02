@@ -213,9 +213,9 @@ async function callGeminiJson(contents: string, schema: any): Promise<any> {
         config,
       });
 
-      // 7 second timeout per model attempt: prevents Chrome mobile browser 10-15s connection aborts
+      // 8.5 second timeout per model attempt to comfortably accommodate mobile latency
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout for model ${model}`)), 7000)
+        setTimeout(() => reject(new Error(`Timeout for model ${model}`)), 8500)
       );
 
       const response: any = await Promise.race([callPromise, timeoutPromise]);

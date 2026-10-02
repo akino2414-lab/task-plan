@@ -237,7 +237,7 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const timeoutId = setTimeout(() => controller.abort(), 40000);
 
       const res = await fetch('/api/ai/generate-plan', {
         method: 'POST',
@@ -381,19 +381,19 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-3xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 my-6 overflow-hidden transition-all">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-3xl bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 my-0 sm:my-6 overflow-hidden transition-all max-h-[92vh] sm:max-h-[85vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-indigo-50/80 via-purple-50/50 to-white dark:from-slate-800/80 dark:via-indigo-950/40 dark:to-slate-900">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
-              <Sparkles className="w-5 h-5 animate-pulse text-amber-300" />
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-indigo-50/80 via-purple-50/50 to-white dark:from-slate-800/80 dark:via-indigo-950/40 dark:to-slate-900 flex-shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 flex-shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse text-amber-300" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <h2 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span>AI 日別スケジュール立案 (Smart Planner)</span>
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 line-clamp-1 sm:line-clamp-none">
                 「この日はこれ、この日はこれ」と無理のない日別計画を自動生成します
               </p>
             </div>
@@ -407,7 +407,7 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
         </div>
 
         {/* Tab switcher */}
-        <div className="grid grid-cols-2 border-b border-slate-200 dark:border-slate-800 px-2 sm:px-6 pt-2 bg-slate-50/50 dark:bg-slate-850 gap-1 sm:gap-2">
+        <div className="grid grid-cols-2 border-b border-slate-200 dark:border-slate-800 px-2 sm:px-6 pt-2 bg-slate-50/50 dark:bg-slate-850 gap-1 sm:gap-2 flex-shrink-0">
           <button
             onClick={() => setActiveMode('existing')}
             className={`flex items-center justify-center gap-1.5 sm:gap-2 pb-2.5 sm:pb-3 px-2 sm:px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors ${
@@ -435,7 +435,7 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-3.5 sm:p-6 max-h-[72vh] overflow-y-auto space-y-5 sm:space-y-6">
+        <div className="p-3.5 sm:p-6 overflow-y-auto space-y-5 sm:space-y-6 flex-1 pb-24 sm:pb-6">
           {activeMode === 'existing' ? (
             /* MODE 1: Schedule Existing Tasks */
             <div className="space-y-5">
@@ -776,6 +776,11 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                         type="text"
                         value={existingChatInput}
                         onChange={(e) => setExistingChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.nativeEvent.isComposing || (e as any).keyCode === 229)) {
+                            e.stopPropagation();
+                          }
+                        }}
                         placeholder="例: 平日の負担を軽くして土日に寄せて / プレゼン資料をもっと前倒しして"
                         disabled={isRefiningExisting}
                         className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
@@ -849,13 +854,13 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                     value={goalInput}
                     onChange={(e) => setGoalInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing && (e as any).keyCode !== 229) {
                         e.preventDefault();
                         handleGenerateGoalRoadmap();
                       }
                     }}
                     placeholder="例: 社会科の勉強　日本史、世界史、地理、公民を均等に学習できる / TOEIC 800点突破"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
 
                   {/* Quick Goal Examples */}
@@ -986,12 +991,6 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                 <div className="pt-2 flex justify-end">
                   <button
                     type="submit"
-                    onClick={(e) => {
-                      if (!isGeneratingGoal && goalInput.trim()) {
-                        e.preventDefault();
-                        handleGenerateGoalRoadmap();
-                      }
-                    }}
                     disabled={isGeneratingGoal || !goalInput.trim()}
                     className="flex items-center justify-center gap-2 px-5 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/25 transition-all disabled:opacity-50 active:scale-95 w-full sm:w-auto"
                   >
@@ -1178,6 +1177,11 @@ export const AiPlannerModal: React.FC<AiPlannerModalProps> = ({
                         type="text"
                         value={goalChatInput}
                         onChange={(e) => setGoalChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.nativeEvent.isComposing || (e as any).keyCode === 229)) {
+                            e.stopPropagation();
+                          }
+                        }}
                         placeholder="例: 世界史のタスクをもう少し増やして / 最終週に総復習タスクを追加して"
                         disabled={isRefiningGoal}
                         className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
